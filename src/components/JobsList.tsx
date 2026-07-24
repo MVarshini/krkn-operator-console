@@ -48,6 +48,7 @@ import { HiOutlineRocketLaunch } from 'react-icons/hi2';
 import { LogViewer } from './LogViewer';
 import { ActiveRunsSummary } from './ActiveRunsSummary';
 import { GraphRunDetail } from './GraphRunDetail';
+import { JobStatsSummary } from './JobStatsSummary';
 import { FileManagementModal } from './FileManagement';
 import { useRole } from '../hooks/useRole';
 import { useActiveRunsPoller } from '../hooks/useActiveRunsPoller';
@@ -55,7 +56,7 @@ import { useActiveRunsPoller } from '../hooks/useActiveRunsPoller';
 import type { ScenarioRunState, ScenarioRunPhase, ClusterJobPhase, GraphRunState, GraphRunSummary, ResiliencyScoreResponse } from '../types/api';
 
 // Unified run item type - can be either a GraphRun or a standalone ScenarioRun
-type UnifiedRunItem =
+export type UnifiedRunItem =
   | {
       type: 'graph';
       graphRunName: string;
@@ -583,6 +584,8 @@ export function JobsList({
             <EmptyStateBody>Click "Run Scenarios" to start a new execution.</EmptyStateBody>
           </EmptyState>
         ) : (
+          <>
+          <JobStatsSummary unifiedRuns={unifiedRuns} />
           <DataList aria-label="Scenario runs list" isCompact>
             {unifiedRuns.map((item) => {
               // Handle GraphRun
@@ -1143,6 +1146,7 @@ export function JobsList({
               );
             })}
           </DataList>
+          </>
         )}
       </CardBody>
 
