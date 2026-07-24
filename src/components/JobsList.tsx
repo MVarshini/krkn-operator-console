@@ -648,7 +648,7 @@ export function JobsList({
           </EmptyState>
         ) : (
           <>
-          <JobStatsSummary unifiedRuns={filteredUnifiedRuns} />
+          <JobStatsSummary unifiedRuns={unifiedRuns} />
           <DataList aria-label="Scenario runs list" isCompact>
             {filteredUnifiedRuns.map((item) => {
               // Handle GraphRun
