@@ -12,9 +12,14 @@ import {
   TachometerAltIcon,
 } from '@patternfly/react-icons';
 import type { UnifiedRunItem } from './JobsList';
+import type { ScenarioRunPhase } from '../types/api';
 
 interface JobStatsSummaryProps {
   unifiedRuns: UnifiedRunItem[];
+}
+
+function getPhase(item: UnifiedRunItem): ScenarioRunPhase {
+  return item.type === 'graph' ? item.phase : item.run.phase;
 }
 
 const statCards = [
@@ -50,34 +55,14 @@ const statCards = [
 
 export function JobStatsSummary({ unifiedRuns }: JobStatsSummaryProps) {
   const stats = useMemo(() => {
-    const counts = unifiedRuns.reduce(
-      (acc, item) => {
-        if (item.type === 'graph') {
-          if (item.nodes.length > 0) {
-            for (const run of item.nodes) {
-              acc.total += run.totalTargets || 0;
-              acc.succeeded += run.successfulJobs || 0;
-              acc.failed += run.failedJobs || 0;
-            }
-          } else if (item.summary) {
-            acc.total += item.summary.totalNodes || 0;
-            acc.succeeded += item.summary.completedNodes || 0;
-            acc.failed += item.summary.failedNodes || 0;
-          }
-        } else {
-          acc.total += item.run.totalTargets || 0;
-          acc.succeeded += item.run.successfulJobs || 0;
-          acc.failed += item.run.failedJobs || 0;
-        }
-        return acc;
-      },
-      { total: 0, succeeded: 0, failed: 0 },
-    );
-    const completed = counts.succeeded + counts.failed;
-    const passRate = completed > 0
-      ? ((counts.succeeded / completed) * 100).toFixed(1) + '%'
-      : 'N/A';
-    return { ...counts, passRate };
+    const total = unifiedRuns.length;
+    const succeeded = unifiedRuns.filter(item => getPhase(item) === 'Succeeded').length;
+    const failed = unifiedRuns.filter(item => {
+      const phase = getPhase(item);
+      return phase === 'Failed' || phase === 'PartiallyFailed';
+    }).length;
+    const passRate = total > 0 ? ((succeeded / total) * 100).toFixed(1) + '%' : 'N/A';
+    return { total, succeeded, failed, passRate };
   }, [unifiedRuns]);
 
   return (
