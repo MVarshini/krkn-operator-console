@@ -12,14 +12,9 @@ import {
   TachometerAltIcon,
 } from '@patternfly/react-icons';
 import type { UnifiedRunItem } from './JobsList';
-import type { ScenarioRunPhase } from '../types/api';
 
 interface JobStatsSummaryProps {
   unifiedRuns: UnifiedRunItem[];
-}
-
-function getPhase(item: UnifiedRunItem): ScenarioRunPhase {
-  return item.type === 'graph' ? item.phase : item.run.phase;
 }
 
 const statCards = [
@@ -55,14 +50,23 @@ const statCards = [
 
 export function JobStatsSummary({ unifiedRuns }: JobStatsSummaryProps) {
   const stats = useMemo(() => {
-    const total = unifiedRuns.length;
-    const succeeded = unifiedRuns.filter(item => getPhase(item) === 'Succeeded').length;
-    const failed = unifiedRuns.filter(item => {
-      const phase = getPhase(item);
-      return phase === 'Failed' || phase === 'PartiallyFailed';
-    }).length;
-    const passRate = total > 0 ? ((succeeded / total) * 100).toFixed(1) + '%' : 'N/A';
-    return { total, succeeded, failed, passRate };
+    const counts = unifiedRuns.reduce(
+      (acc, item) => {
+        const runs = item.type === 'graph' ? item.nodes : [item.run];
+        for (const run of runs) {
+          acc.total += run.totalTargets;
+          acc.succeeded += run.successfulJobs;
+          acc.failed += run.failedJobs;
+        }
+        return acc;
+      },
+      { total: 0, succeeded: 0, failed: 0 },
+    );
+    const completed = counts.succeeded + counts.failed;
+    const passRate = completed > 0
+      ? ((counts.succeeded / completed) * 100).toFixed(1) + '%'
+      : 'N/A';
+    return { ...counts, passRate };
   }, [unifiedRuns]);
 
   return (

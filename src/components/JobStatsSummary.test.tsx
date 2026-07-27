@@ -2,23 +2,41 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { JobStatsSummary } from './JobStatsSummary';
 import type { UnifiedRunItem } from './JobsList';
-import type { ScenarioRunPhase } from '../types/api';
+import type { ScenarioRunState, ScenarioRunPhase } from '../types/api';
 
-function makeScenarioItem(phase: ScenarioRunPhase): UnifiedRunItem {
+function makeScenarioItem(
+  phase: ScenarioRunPhase,
+  jobs: { total: number; succeeded: number; failed: number; running?: number },
+): UnifiedRunItem {
   return {
     type: 'scenario',
-    run: { phase } as import('../types/api').ScenarioRunState,
+    run: {
+      phase,
+      totalTargets: jobs.total,
+      successfulJobs: jobs.succeeded,
+      failedJobs: jobs.failed,
+      runningJobs: jobs.running ?? 0,
+    } as ScenarioRunState,
   };
 }
 
-function makeGraphItem(phase: ScenarioRunPhase): UnifiedRunItem {
+function makeGraphItem(
+  phase: ScenarioRunPhase,
+  nodes: Array<{ phase: ScenarioRunPhase; total: number; succeeded: number; failed: number; running?: number }>,
+): UnifiedRunItem {
   return {
     type: 'graph',
     graphRunName: `graph-${phase}`,
-    nodes: [],
+    nodes: nodes.map(n => ({
+      phase: n.phase,
+      totalTargets: n.total,
+      successfulJobs: n.succeeded,
+      failedJobs: n.failed,
+      runningJobs: n.running ?? 0,
+    })) as ScenarioRunState[],
     phase,
     createdAt: '2026-01-01T00:00:00Z',
-    summary: { totalNodes: 0, completedNodes: 0, runningNodes: 0, failedNodes: 0, pendingNodes: 0 },
+    summary: { totalNodes: nodes.length, completedNodes: 0, runningNodes: 0, failedNodes: 0, pendingNodes: 0 },
   };
 }
 
@@ -46,44 +64,68 @@ describe('JobStatsSummary', () => {
     expect(screen.getByText('N/A')).toBeInTheDocument();
   });
 
-  it('counts succeeded correctly', () => {
-    const runs = [
-      makeScenarioItem('Succeeded'),
-      makeScenarioItem('Succeeded'),
-      makeScenarioItem('Failed'),
-    ];
+  it('aggregates job counts from a single scenario run', () => {
+    const runs = [makeScenarioItem('Succeeded', { total: 5, succeeded: 4, failed: 1 })];
     render(<JobStatsSummary unifiedRuns={runs} />);
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();
-    expect(screen.getByText('66.7%')).toBeInTheDocument();
+    expect(screen.getByText('80.0%')).toBeInTheDocument();
   });
 
-  it('counts PartiallyFailed as failed', () => {
+  it('aggregates job counts across multiple scenario runs', () => {
     const runs = [
-      makeScenarioItem('Succeeded'),
-      makeScenarioItem('PartiallyFailed'),
+      makeScenarioItem('Succeeded', { total: 3, succeeded: 3, failed: 0 }),
+      makeScenarioItem('Failed', { total: 2, succeeded: 0, failed: 2 }),
     ];
     render(<JobStatsSummary unifiedRuns={runs} />);
-    const ones = screen.getAllByText('1');
-    expect(ones).toHaveLength(2);
-    expect(screen.getByText('50.0%')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('60.0%')).toBeInTheDocument();
+  });
+
+  it('aggregates jobs from graph run nodes', () => {
+    const runs = [
+      makeGraphItem('Succeeded', [
+        { phase: 'Succeeded', total: 4, succeeded: 3, failed: 1 },
+        { phase: 'Succeeded', total: 2, succeeded: 2, failed: 0 },
+      ]),
+    ];
+    render(<JobStatsSummary unifiedRuns={runs} />);
+    expect(screen.getByText('6')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('83.3%')).toBeInTheDocument();
   });
 
   it('handles mixed graph and scenario items', () => {
     const runs = [
-      makeGraphItem('Succeeded'),
-      makeScenarioItem('Failed'),
-      makeGraphItem('Running'),
+      makeGraphItem('Succeeded', [
+        { phase: 'Succeeded', total: 3, succeeded: 3, failed: 0 },
+      ]),
+      makeScenarioItem('Failed', { total: 2, succeeded: 0, failed: 2 }),
     ];
     render(<JobStatsSummary unifiedRuns={runs} />);
+    expect(screen.getByText('5')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('33.3%')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('60.0%')).toBeInTheDocument();
   });
 
-  it('shows 100% pass rate when all succeeded', () => {
-    const runs = [makeScenarioItem('Succeeded'), makeGraphItem('Succeeded')];
+  it('shows N/A pass rate when no jobs have completed', () => {
+    const runs = [makeScenarioItem('Running', { total: 3, succeeded: 0, failed: 0, running: 3 })];
     render(<JobStatsSummary unifiedRuns={runs} />);
-    expect(screen.getByText('100.0%')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('N/A')).toBeInTheDocument();
+  });
+
+  it('computes pass rate from completed jobs only, excluding running', () => {
+    const runs = [makeScenarioItem('Running', { total: 5, succeeded: 2, failed: 1, running: 2 })];
+    render(<JobStatsSummary unifiedRuns={runs} />);
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('66.7%')).toBeInTheDocument();
   });
 });
