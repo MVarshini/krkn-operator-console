@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
-import { Card, CardTitle, CardBody, Button, Alert, AlertGroup, AlertActionCloseButton, Flex, FlexItem, Checkbox } from '@patternfly/react-core';
-import { CopyIcon } from '@patternfly/react-icons';
+import { Card, CardTitle, CardBody, Button, Alert, AlertGroup, AlertActionCloseButton, Flex, FlexItem, Checkbox, Dropdown, DropdownList, DropdownItem, MenuToggle, MenuToggleElement } from '@patternfly/react-core';
+import { CopyIcon, DownloadIcon } from '@patternfly/react-icons';
 import Anser from 'anser';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { websocketService } from '../services/websocketService';
@@ -19,6 +19,7 @@ export function LogViewer({ scenarioRunName, jobId, clusterName: _clusterName, p
   const [logs, setLogs] = useState<string[]>([]);
   const [showCopyAlert, setShowCopyAlert] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isDownloadOpen, setIsDownloadOpen] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const isFirstMessageRef = useRef<boolean>(true);
 
@@ -58,6 +59,91 @@ export function LogViewer({ scenarioRunName, jobId, clusterName: _clusterName, p
     disabled: isPending,
     subscriptionMode: false,
   });
+
+
+  const triggerDownload = (content: string, filename: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const generateStyledHtml = (fontSize: string = '12px', forPrint: boolean = false): string => {
+    const htmlLines = logs.map(log => Anser.ansiToHtml(log, { use_classes: false }));
+    const printStyles = forPrint ? `
+    body {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+    }
+    span[style] {
+      color: #000000 !important;
+    }` : '';
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logs - ${podName}</title>
+  <style>
+    body {
+      background-color: #000000;
+      color: #ffffff;
+      font-family: monospace;
+      font-size: ${fontSize};
+      padding: 16px;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }${printStyles}
+    }
+    @page { size: A4 landscape; margin: 10mm; }
+  </style>
+</head>
+<body>
+${htmlLines.map(line => `<div>${line}</div>`).join('\n')}
+</body>
+</html>`;
+  };
+
+  const handleDownloadHtml = () => {
+    triggerDownload(generateStyledHtml('12px'), `logs-${podName}.html`, 'text/html');
+    setIsDownloadOpen(false);
+  };
+
+  const handleDownloadJson = () => {
+    const jsonContent = JSON.stringify({
+      podName,
+      exportedAt: new Date().toISOString(),
+      totalLines: logs.length,
+      logs,
+    }, null, 2);
+    triggerDownload(jsonContent, `logs-${podName}.json`, 'application/json');
+    setIsDownloadOpen(false);
+  };
+
+  const handleDownloadPdf = () => {
+    const htmlContent = generateStyledHtml('10px', true);
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const blobUrl = URL.createObjectURL(blob);
+    const printWindow = window.open(blobUrl, '_blank');
+
+    if (printWindow) {
+      printWindow.onload = () => {
+        printWindow.focus();
+        printWindow.print();
+        URL.revokeObjectURL(blobUrl);
+      };
+    } else {
+      URL.revokeObjectURL(blobUrl);
+    }
+
+    setIsDownloadOpen(false);
+  };
 
   const handleCopyLogs = async () => {
     try {
@@ -122,9 +208,41 @@ export function LogViewer({ scenarioRunName, jobId, clusterName: _clusterName, p
               <b>Scenario Logs</b> - {podName}
             </FlexItem>
             <FlexItem>
-              <Button variant="secondary" icon={<CopyIcon />} onClick={handleCopyLogs} size="sm">
-                Copy Logs
-              </Button>
+              <Flex spaceItems={{ default: 'spaceItemsSm' }}>
+                <FlexItem>
+                  <Button variant="control" icon={<CopyIcon />} onClick={handleCopyLogs} size="sm" />
+                   
+                </FlexItem>
+                <FlexItem>
+                  <Dropdown
+                    isOpen={isDownloadOpen}
+                    onOpenChange={(isOpen) => setIsDownloadOpen(isOpen)}
+                    toggle={(toggleRef: React.Ref<MenuToggleElement>) => (
+                      <MenuToggle
+                        variant="secondary"
+                        ref={toggleRef}
+                        onClick={() => setIsDownloadOpen(!isDownloadOpen)}
+                        isExpanded={isDownloadOpen}
+                      >
+                        <DownloadIcon />
+                      </MenuToggle>
+                    )}
+                    shouldFocusToggleOnSelect
+                  >
+                    <DropdownList>
+                      <DropdownItem key="html" onClick={handleDownloadHtml}>
+                        HTML
+                      </DropdownItem>
+                      <DropdownItem key="json" onClick={handleDownloadJson}>
+                        JSON
+                      </DropdownItem>
+                      <DropdownItem key="pdf" onClick={handleDownloadPdf}>
+                        PDF
+                      </DropdownItem>
+                    </DropdownList>
+                  </Dropdown>
+                </FlexItem>
+              </Flex>
             </FlexItem>
           </Flex>
         </CardTitle>
