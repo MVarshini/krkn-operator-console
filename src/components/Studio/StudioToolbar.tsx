@@ -1,36 +1,56 @@
-/**
- * StudioToolbar - Toolbar with workflow actions
- *
- * Provides:
- * - Add Scenario button
- * - Run Workflow
- * - Export to JSON
- * - Save to Cluster (mock)
- * - Clear All
- */
-
+import { useState } from 'react';
 import {
   Toolbar,
   ToolbarContent,
   ToolbarItem,
   Button,
+  Modal,
+  ModalVariant,
+  List,
+  ListItem,
+  Spinner,
 } from '@patternfly/react-core';
-import { PlusCircleIcon, DownloadIcon, SaveIcon, TrashIcon } from '@patternfly/react-icons';
+import { PlusCircleIcon, DownloadIcon, SaveIcon, TrashIcon, ExclamationCircleIcon, ExclamationTriangleIcon } from '@patternfly/react-icons';
 import { HiOutlineRocketLaunch } from 'react-icons/hi2';
 import { useStudioContext } from './StudioContext';
+import { useNotifications } from '../../hooks';
+import { SaveWorkflowModal } from './SaveWorkflowModal';
+import { SaveWorkflowConfirmModal } from './SaveWorkflowConfirmModal';
 
 interface StudioToolbarProps {
   onRunWorkflow: () => void;
 }
 
+/**
+ * Toolbar for Chaos Studio canvas actions.
+ *
+ * Provides buttons for: Add Scenario, Run Workflow, Export JSON, Save to Cluster,
+ * and Clear All. Includes pre-run validation (blocks unconfigured nodes) and an
+ * unsaved-changes guard with Save & Run / Run without saving options.
+ *
+ * The save button label changes dynamically:
+ * - "Save to Cluster" for new workflows or clean saved workflows.
+ * - "Update Workflow" when a saved workflow has pending changes.
+ *
+ * @example
+ * ```tsx
+ * <StudioToolbar onRunWorkflow={() => openRunModal()} />
+ * ```
+ */
 export function StudioToolbar({ onRunWorkflow }: StudioToolbarProps) {
-  const { addNode, exportWorkflow, clearWorkflow, workflow } = useStudioContext();
+  const { addNode, exportWorkflow, clearWorkflow, workflow, savedFile, saveWorkflowToCluster, isDirty, isEditingDetails } = useStudioContext();
+  const { showError } = useNotifications();
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [isUnsavedModalOpen, setIsUnsavedModalOpen] = useState(false);
+  const [isSavingBeforeRun, setIsSavingBeforeRun] = useState(false);
 
   const handleExport = () => {
     const result = exportWorkflow();
 
     if ('error' in result) {
-      alert(result.error); // TODO: Replace with toast notification
+      alert(result.error);
       return;
     }
 
@@ -43,10 +63,58 @@ export function StudioToolbar({ onRunWorkflow }: StudioToolbarProps) {
     URL.revokeObjectURL(url);
   };
 
-  const handleSaveToCluster = async () => {
-    // Mock - will implement later
-    await new Promise(r => setTimeout(r, 1000));
-    alert('Save to cluster functionality will be implemented in a future phase');
+  const handleSave = () => {
+    if (savedFile) {
+      setIsConfirmModalOpen(true);
+    } else {
+      setIsSaveModalOpen(true);
+    }
+  };
+
+  const validateWorkflow = (): string[] => {
+    const errors: string[] = [];
+
+    const unconfigured = workflow.nodes.filter(n => n.status !== 'configured');
+    if (unconfigured.length > 0) {
+      errors.push(
+        `${unconfigured.length} node(s) not configured: ${unconfigured.map(n => n.nodeId).join(', ')}`
+      );
+    }
+
+    return errors;
+  };
+
+  const handleRunWithGuard = () => {
+    const errors = validateWorkflow();
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+
+    if (savedFile && isDirty) {
+      setIsUnsavedModalOpen(true);
+      return;
+    }
+    onRunWorkflow();
+  };
+
+  const handleSaveAndRun = async () => {
+    if (!savedFile) return;
+    setIsSavingBeforeRun(true);
+    try {
+      await saveWorkflowToCluster();
+      setIsUnsavedModalOpen(false);
+      onRunWorkflow();
+    } catch (err) {
+      showError('Save failed', err instanceof Error ? err.message : 'Failed to save workflow');
+    } finally {
+      setIsSavingBeforeRun(false);
+    }
+  };
+
+  const handleRunWithoutSaving = () => {
+    setIsUnsavedModalOpen(false);
+    onRunWorkflow();
   };
 
   const handleClearAll = () => {
@@ -58,66 +126,140 @@ export function StudioToolbar({ onRunWorkflow }: StudioToolbarProps) {
   };
 
   return (
-    <Toolbar>
-      <ToolbarContent>
-        <ToolbarItem>
+    <>
+      <Toolbar>
+        <ToolbarContent>
+          <ToolbarItem>
+            <Button
+              variant="primary"
+              icon={<PlusCircleIcon />}
+              onClick={addNode}
+            >
+              Add Scenario
+            </Button>
+          </ToolbarItem>
+
+          <ToolbarItem>
+            <Button
+              variant="primary"
+              icon={<HiOutlineRocketLaunch />}
+              onClick={handleRunWithGuard}
+              isDisabled={workflow.nodes.length === 0}
+            >
+              Run Workflow
+            </Button>
+          </ToolbarItem>
+
+          <ToolbarItem variant="separator" />
+
+          <ToolbarItem>
+            <Button
+              variant="secondary"
+              icon={<DownloadIcon />}
+              onClick={handleExport}
+              isDisabled={workflow.nodes.length === 0}
+            >
+              Export JSON
+            </Button>
+          </ToolbarItem>
+
+          <ToolbarItem>
+            <Button
+              variant="secondary"
+              icon={<SaveIcon />}
+              onClick={handleSave}
+              isDisabled={workflow.nodes.length === 0 || isEditingDetails}
+            >
+              {savedFile && isDirty ? 'Update Workflow' : 'Save to Cluster'}
+            </Button>
+          </ToolbarItem>
+
+          <ToolbarItem variant="separator" />
+
+          <ToolbarItem>
+            <Button
+              variant="danger"
+              icon={<TrashIcon />}
+              onClick={handleClearAll}
+              isDisabled={workflow.nodes.length === 0}
+            >
+              Clear All
+            </Button>
+          </ToolbarItem>
+        </ToolbarContent>
+      </Toolbar>
+
+      <SaveWorkflowModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        onSuccess={() => setIsSaveModalOpen(false)}
+      />
+
+      <SaveWorkflowConfirmModal
+        isOpen={isConfirmModalOpen}
+        onClose={() => setIsConfirmModalOpen(false)}
+        onSuccess={() => setIsConfirmModalOpen(false)}
+      />
+
+      <Modal
+        variant={ModalVariant.small}
+        title="Unsaved changes"
+        titleIconVariant={ExclamationTriangleIcon}
+        isOpen={isUnsavedModalOpen}
+        onClose={() => !isSavingBeforeRun && setIsUnsavedModalOpen(false)}
+        actions={[
           <Button
+            key="save-run"
             variant="primary"
-            icon={<PlusCircleIcon />}
-            onClick={addNode}
+            icon={isSavingBeforeRun ? <Spinner size="sm" /> : <SaveIcon />}
+            onClick={handleSaveAndRun}
+            isDisabled={isSavingBeforeRun}
           >
-            Add Scenario
-          </Button>
-        </ToolbarItem>
-
-        <ToolbarItem>
+            {isSavingBeforeRun ? 'Saving...' : 'Save & Run'}
+          </Button>,
           <Button
-            variant="primary"
-            icon={<HiOutlineRocketLaunch />}
-            onClick={onRunWorkflow}
-            isDisabled={workflow.nodes.length === 0}
-          >
-            Run Workflow
-          </Button>
-        </ToolbarItem>
-
-        <ToolbarItem variant="separator" />
-
-        <ToolbarItem>
-          <Button
+            key="run"
             variant="secondary"
-            icon={<DownloadIcon />}
-            onClick={handleExport}
-            isDisabled={workflow.nodes.length === 0}
+            onClick={handleRunWithoutSaving}
+            isDisabled={isSavingBeforeRun}
           >
-            Export JSON
-          </Button>
-        </ToolbarItem>
-
-        <ToolbarItem>
+            Run without saving
+          </Button>,
           <Button
-            variant="secondary"
-            icon={<SaveIcon />}
-            onClick={handleSaveToCluster}
-            isDisabled={workflow.nodes.length === 0}
+            key="cancel"
+            variant="link"
+            onClick={() => setIsUnsavedModalOpen(false)}
+            isDisabled={isSavingBeforeRun}
           >
-            Save to Cluster
-          </Button>
-        </ToolbarItem>
+            Cancel
+          </Button>,
+        ]}
+      >
+        <p>
+          The workflow <strong>&laquo;{savedFile?.fileName}&raquo;</strong> has unsaved changes.
+          Would you like to save before running?
+        </p>
+      </Modal>
 
-        <ToolbarItem variant="separator" />
-
-        <ToolbarItem>
-          <Button
-            variant="danger"
-            icon={<TrashIcon />}
-            onClick={handleClearAll}
-            isDisabled={workflow.nodes.length === 0}
-          >
-            Clear All
-          </Button>
-        </ToolbarItem>
-      </ToolbarContent>
-    </Toolbar>
+      <Modal
+        variant={ModalVariant.small}
+        title="Cannot run workflow"
+        titleIconVariant={ExclamationCircleIcon}
+        isOpen={validationErrors.length > 0}
+        onClose={() => setValidationErrors([])}
+        actions={[
+          <Button key="ok" variant="primary" onClick={() => setValidationErrors([])}>
+            OK
+          </Button>,
+        ]}
+      >
+        <p style={{ marginBottom: '0.5rem' }}>Please fix the following issues before running:</p>
+        <List>
+          {validationErrors.map((err, i) => (
+            <ListItem key={i}>{err}</ListItem>
+          ))}
+        </List>
+      </Modal>
+    </>
   );
 }

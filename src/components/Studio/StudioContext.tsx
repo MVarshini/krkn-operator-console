@@ -10,12 +10,23 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, ReactNode, useRef } from 'react';
 import type { StudioNode, StudioEdge, StudioWorkflow, StudioAutosave, GraphScenarioNode } from '../../types/api';
-import { AUTOSAVE_KEY, AUTOSAVE_VERSION, saveAutosave } from './studioAutosave';
+import { operatorApi } from '../../services/operatorApi';
+import { AUTOSAVE_VERSION, saveAutosave, clearAutosave } from './studioAutosave';
 
 const AUTOSAVE_INTERVAL = 30000; // 30 seconds
 
+interface SavedFileMetadata {
+  fileId: string;
+  fileName: string;
+  description?: string;
+  availableToAll: boolean;
+  groups?: string[];
+  savedAt: string;
+}
+
 interface StudioContextType {
   workflow: StudioWorkflow;
+  savedFile: SavedFileMetadata | null;
   addNode: () => void;
   updateNode: (nodeId: string, updates: Partial<StudioNode>) => void;
   deleteNode: (nodeId: string) => void;
@@ -26,6 +37,13 @@ interface StudioContextType {
   validateNodeId: (nodeId: string, excludeId?: string) => { valid: boolean; error?: string };
   exportWorkflow: () => { graph: { [nodeId: string]: GraphScenarioNode }; metadata: { exportedAt: string; nodeCount: number } } | { error: string };
   clearWorkflow: () => void;
+  setSavedFile: (meta: SavedFileMetadata, workflowSnapshot?: StudioWorkflow) => void;
+  saveWorkflowToCluster: () => Promise<void>;
+  clearSavedFile: () => void;
+  loadWorkflow: (workflow: StudioWorkflow, meta: SavedFileMetadata) => void;
+  isDirty: boolean;
+  isEditingDetails: boolean;
+  setIsEditingDetails: (editing: boolean) => void;
 }
 
 const StudioContext = createContext<StudioContextType | undefined>(undefined);
@@ -43,16 +61,26 @@ export function StudioProvider({ children, initialWorkflow }: StudioProviderProp
       nextNodeNumber: 1,
     }
   );
+  const [savedFile, setSavedFileState] = useState<SavedFileMetadata | null>(null);
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
 
-  // Use ref to access latest workflow without re-creating interval
+  // Use refs to access latest state without re-creating interval
   const workflowRef = useRef(workflow);
   workflowRef.current = workflow;
+  const savedFileRef = useRef(savedFile);
+  savedFileRef.current = savedFile;
 
-  // Autosave to localStorage - interval runs once, reads from ref
+  const isDirty = useMemo(() => {
+    if (!savedFile || !lastSavedSnapshot) return false;
+    return JSON.stringify(workflow) !== lastSavedSnapshot;
+  }, [savedFile, lastSavedSnapshot, workflow]);
+
+  // Autosave to localStorage only for unsaved workflows (no cluster file)
   useEffect(() => {
     const interval = setInterval(() => {
       const currentWorkflow = workflowRef.current;
-      if (currentWorkflow.nodes.length > 0) {
+      if (currentWorkflow.nodes.length > 0 && savedFileRef.current === null) {
         const autosave: StudioAutosave = {
           workflow: currentWorkflow,
           timestamp: Date.now(),
@@ -311,18 +339,55 @@ export function StudioProvider({ children, initialWorkflow }: StudioProviderProp
     };
   }, [workflow]);
 
-  // Clear workflow
+  const setSavedFile = useCallback((meta: SavedFileMetadata, workflowSnapshot?: StudioWorkflow) => {
+    setSavedFileState(meta);
+    setLastSavedSnapshot(JSON.stringify(workflowSnapshot ?? workflowRef.current));
+    clearAutosave();
+  }, []);
+
+  const saveWorkflowToCluster = useCallback(async () => {
+    const file = savedFileRef.current;
+    if (!file) throw new Error('No saved file to update');
+    const snapshot = { ...workflowRef.current };
+    await operatorApi.updateFile(file.fileId, {
+      fileName: file.fileName,
+      content: JSON.stringify(snapshot),
+      description: file.description,
+      availableToAll: file.availableToAll,
+      groups: file.groups,
+      filePurpose: 'workflow-template',
+    });
+    setSavedFileState({ ...file, savedAt: new Date().toISOString() });
+    setLastSavedSnapshot(JSON.stringify(snapshot));
+    clearAutosave();
+  }, []);
+
+  const clearSavedFile = useCallback(() => {
+    setSavedFileState(null);
+  }, []);
+
+  const loadWorkflow = useCallback((newWorkflow: StudioWorkflow, meta: SavedFileMetadata) => {
+    setWorkflow(newWorkflow);
+    setSavedFileState(meta);
+    setLastSavedSnapshot(JSON.stringify(newWorkflow));
+    setIsEditingDetails(false);
+    clearAutosave();
+  }, []);
+
   const clearWorkflow = useCallback(() => {
     setWorkflow({
       nodes: [],
       edges: [],
       nextNodeNumber: 1,
     });
-    localStorage.removeItem(AUTOSAVE_KEY);
+    setSavedFileState(null);
+    setLastSavedSnapshot(null);
+    clearAutosave();
   }, []);
 
   const value: StudioContextType = useMemo(() => ({
     workflow,
+    savedFile,
     addNode,
     updateNode,
     deleteNode,
@@ -333,8 +398,16 @@ export function StudioProvider({ children, initialWorkflow }: StudioProviderProp
     validateNodeId,
     exportWorkflow,
     clearWorkflow,
+    setSavedFile,
+    saveWorkflowToCluster,
+    clearSavedFile,
+    loadWorkflow,
+    isDirty,
+    isEditingDetails,
+    setIsEditingDetails,
   }), [
     workflow,
+    savedFile,
     addNode,
     updateNode,
     deleteNode,
@@ -345,6 +418,12 @@ export function StudioProvider({ children, initialWorkflow }: StudioProviderProp
     validateNodeId,
     exportWorkflow,
     clearWorkflow,
+    setSavedFile,
+    saveWorkflowToCluster,
+    clearSavedFile,
+    loadWorkflow,
+    isDirty,
+    isEditingDetails,
   ]);
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
