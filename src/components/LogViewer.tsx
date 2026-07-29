@@ -219,7 +219,7 @@ ${htmlLines.map(line => `<div>${line}</div>`).join('\n')}
                     onOpenChange={(isOpen) => setIsDownloadOpen(isOpen)}
                     toggle={(toggleRef: React.Ref<MenuToggleElement>) => (
                       <MenuToggle
-                        variant="secondary"
+                        variant="default"
                         ref={toggleRef}
                         onClick={() => setIsDownloadOpen(!isDownloadOpen)}
                         isExpanded={isDownloadOpen}
