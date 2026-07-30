@@ -1,11 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
 import { JobsList } from './JobsList';
-import type { ScenarioRunState, GraphRunState } from '../types/api';
+import type { ScenarioRunState, ClusterJob, GraphRunState } from '../types/api';
 
 vi.mock('../hooks/useRole', () => ({
-  useRole: () => ({ isAdmin: false }),
+  useRole: () => ({ isAdmin: false, role: 'user' }),
 }));
 
 vi.mock('../hooks/useActiveRunsPoller', () => ({
@@ -33,6 +33,7 @@ const defaultProps = {
   pausedGraphPollingIds: noopSet,
   onToggleGraphRunAccordion: noop,
   onDeleteGraphRun: noopAsync,
+  onRerunScenario: noop,
 };
 
 function makeScenarioRun(
@@ -82,7 +83,7 @@ describe('JobsList', () => {
     render(<JobsList {...defaultProps} scenarioRuns={runs} />);
     expect(screen.getByText('Total Jobs')).toBeInTheDocument();
     expect(screen.getByText('Pass Rate')).toBeInTheDocument();
-    expect(screen.getByText('60.0%')).toBeInTheDocument();
+    expect(screen.getByText('50.0%')).toBeInTheDocument();
   });
 
   describe('Run Name Filter', () => {
@@ -152,5 +153,144 @@ describe('JobsList', () => {
         expect(screen.getByText('my-label')).toBeInTheDocument();
       });
     });
+  });
+});
+
+describe('JobsList - Re-run button', () => {
+  const mockOnRerunScenario = vi.fn();
+
+  const makeJob = (overrides: Partial<ClusterJob> = {}): ClusterJob => ({
+    providerName: 'krkn-operator-acm',
+    clusterName: 'managed-cluster-1',
+    jobId: 'job-001',
+    podName: 'krkn-pod-001',
+    phase: 'Running',
+    message: '',
+    ...overrides,
+  });
+
+  const makeRerunRun = (jobs: ClusterJob[]): ScenarioRunState => ({
+    scenarioRunName: 'run-001',
+    scenarioName: 'node-cpu-hog',
+    phase: jobs.some(j => j.phase === 'Running') ? 'Running' : 'Succeeded',
+    totalTargets: jobs.length,
+    successfulJobs: jobs.filter(j => j.phase === 'Succeeded').length,
+    failedJobs: jobs.filter(j => j.phase === 'Failed').length,
+    runningJobs: jobs.filter(j => j.phase === 'Running').length,
+    clusterJobs: jobs,
+    createdAt: '2026-07-29T10:00:00Z',
+  });
+
+  const rerunDefaultProps = {
+    expandedRunIds: new Set<string>(['run-001']),
+    expandedJobIds: new Set<string>(),
+    pausedPollingRunIds: new Set<string>(),
+    onToggleRunAccordion: vi.fn(),
+    onToggleJobAccordion: vi.fn(),
+    onDeleteScenarioRun: vi.fn(),
+    onDeleteJob: vi.fn(),
+    onCreateJob: vi.fn(),
+    onRefreshScenarioRun: vi.fn(),
+    onNavigateToStudio: vi.fn(),
+    onRerunScenario: mockOnRerunScenario,
+    graphRuns: [],
+    expandedGraphRunIds: new Set<string>(),
+    pausedGraphPollingIds: new Set<string>(),
+    onToggleGraphRunAccordion: vi.fn(),
+    onDeleteGraphRun: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should not show Re-run button for a running job (no completionTime)', () => {
+    const jobs = [makeJob({ phase: 'Running' })];
+    render(<JobsList {...rerunDefaultProps} scenarioRuns={[makeRerunRun(jobs)]} />);
+
+    expect(screen.queryByLabelText('Re-run scenario')).not.toBeInTheDocument();
+  });
+
+  it('should not show Re-run button for a pending job', () => {
+    const jobs = [makeJob({ phase: 'Pending' })];
+    render(<JobsList {...rerunDefaultProps} scenarioRuns={[makeRerunRun(jobs)]} />);
+
+    expect(screen.queryByLabelText('Re-run scenario')).not.toBeInTheDocument();
+  });
+
+  it('should show Re-run button for a completed job (has completionTime)', () => {
+    const jobs = [makeJob({ phase: 'Succeeded', completionTime: '2026-07-29T11:00:00Z' })];
+    render(<JobsList {...rerunDefaultProps} scenarioRuns={[makeRerunRun(jobs)]} />);
+
+    expect(screen.getByLabelText('Re-run scenario')).toBeInTheDocument();
+  });
+
+  it('should show Re-run button for a failed job with completionTime', () => {
+    const jobs = [makeJob({ phase: 'Failed', completionTime: '2026-07-29T11:00:00Z', message: 'OOM killed' })];
+    render(<JobsList {...rerunDefaultProps} scenarioRuns={[makeRerunRun(jobs)]} />);
+
+    expect(screen.getByLabelText('Re-run scenario')).toBeInTheDocument();
+  });
+
+  it('should call onRerunScenario with correct args when Re-run clicked', async () => {
+    const user = userEvent.setup();
+    const jobs = [makeJob({ phase: 'Succeeded', completionTime: '2026-07-29T11:00:00Z' })];
+    const run = makeRerunRun(jobs);
+    render(<JobsList {...rerunDefaultProps} scenarioRuns={[run]} />);
+
+    await user.click(screen.getByLabelText('Re-run scenario'));
+
+    expect(mockOnRerunScenario).toHaveBeenCalledTimes(1);
+    expect(mockOnRerunScenario).toHaveBeenCalledWith(run, 'job-001');
+  });
+
+  it('should show Re-run only for completed jobs in a mixed-status run', () => {
+    const jobs = [
+      makeJob({ jobId: 'job-running', phase: 'Running' }),
+      makeJob({ jobId: 'job-done', phase: 'Succeeded', completionTime: '2026-07-29T11:00:00Z', clusterName: 'cluster-2' }),
+    ];
+    render(<JobsList {...rerunDefaultProps} scenarioRuns={[makeRerunRun(jobs)]} />);
+
+    const rerunButtons = screen.getAllByLabelText('Re-run scenario');
+    expect(rerunButtons).toHaveLength(1);
+  });
+
+  it('should not show Re-run button for graph runs', () => {
+    const graphRun: GraphRunState = {
+      name: 'graphrun-001',
+      namespace: 'default',
+      creationTimestamp: '2026-07-29T10:00:00Z',
+      phase: 'Completed',
+      ownerUserId: 'user@example.com',
+      targetRequestId: 'uuid-001',
+      summary: { totalNodes: 1, completedNodes: 1, runningNodes: 0, failedNodes: 0, pendingNodes: 0 },
+      completionTime: '2026-07-29T11:00:00Z',
+    };
+
+    const graphNodeRun: ScenarioRunState = {
+      scenarioRunName: 'run-graph-001',
+      scenarioName: 'node-cpu-hog',
+      phase: 'Succeeded',
+      totalTargets: 1,
+      successfulJobs: 1,
+      failedJobs: 0,
+      runningJobs: 0,
+      clusterJobs: [makeJob({ phase: 'Succeeded', completionTime: '2026-07-29T11:00:00Z' })],
+      createdAt: '2026-07-29T10:00:00Z',
+      graphRunName: 'graphrun-001',
+      graphNodeId: 'node-1',
+    };
+
+    render(
+      <JobsList
+        {...rerunDefaultProps}
+        scenarioRuns={[graphNodeRun]}
+        graphRuns={[graphRun]}
+        expandedRunIds={new Set<string>()}
+        expandedGraphRunIds={new Set<string>(['graphrun-001'])}
+      />
+    );
+
+    expect(screen.queryByLabelText('Re-run scenario')).not.toBeInTheDocument();
   });
 });

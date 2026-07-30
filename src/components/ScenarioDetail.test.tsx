@@ -112,6 +112,8 @@ describe('ScenarioDetail', () => {
     providerConfigUuid: null,
     providerConfigStatus: 'idle',
     providerConfigData: null,
+    rerunIntent: null,
+    startInPreview: false,
     notifications: [],
   };
 

@@ -17,7 +17,7 @@ import { operatorApi } from './services/operatorApi';
 import { graphRunsApi } from './services';
 import { usersApi } from './services/usersApi';
 import { useNotifications } from './hooks';
-import type { SelectedCluster, UpdateUserRequest, ChangePasswordRequest } from './types/api';
+import type { SelectedCluster, UpdateUserRequest, ChangePasswordRequest, ScenarioRunState } from './types/api';
 
 function App() {
   const { state, dispatch } = useAppContext();
@@ -154,6 +154,43 @@ function App() {
     }
   };
 
+  const handleRerunScenario = async (run: ScenarioRunState, jobId: string) => {
+    dispatch({ type: 'INIT_START' });
+
+    try {
+      const config = await operatorApi.getJobConfig(jobId);
+
+      const clusters = Object.entries(config.targetClusters).flatMap(
+        ([operatorName, clusterNames]) =>
+          clusterNames.map(clusterName => ({ operatorName, clusterName }))
+      );
+
+      dispatch({
+        type: 'RERUN_SCENARIO',
+        payload: {
+          scenarioName: config.scenarioName,
+          registryName: run.registryName,
+          clusters,
+          environment: config.environment,
+        },
+      });
+
+      const response = await operatorApi.createTargetRequest();
+      dispatch({
+        type: 'INIT_SUCCESS',
+        payload: { uuid: response.uuid },
+      });
+    } catch (error) {
+      dispatch({
+        type: 'INIT_ERROR',
+        payload: {
+          type: 'network',
+          message: error instanceof Error ? error.message : 'Failed to start re-run',
+        },
+      });
+    }
+  };
+
   const renderContent = () => {
     switch (state.phase) {
       case 'initializing':
@@ -179,6 +216,7 @@ function App() {
               onDeleteJob={handleDeleteJob}
               onCreateJob={handleCreateJob}
               onNavigateToStudio={handleNavigateToStudio}
+              onRerunScenario={handleRerunScenario}
               graphRuns={state.graphRuns}
               expandedGraphRunIds={state.expandedGraphRunIds}
               onToggleGraphRunAccordion={(graphRunName) =>

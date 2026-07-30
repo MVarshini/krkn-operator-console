@@ -52,9 +52,9 @@ interface ScenarioDetailProps {
 
 export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailProps) {
   const { state, dispatch } = useAppContext();
-  const { scenarioDetail, scenarioFormValues, scenarioGlobals, globalFormValues, globalTouchedFields } = state;
+  const { scenarioDetail, scenarioFormValues, scenarioGlobals, globalFormValues, globalTouchedFields, startInPreview } = state;
   const { showSuccess } = useNotifications();
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(startInPreview);
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [showGlobalParameters, setShowGlobalParameters] = useState(false);
   const [loadingGlobals, setLoadingGlobals] = useState(false);

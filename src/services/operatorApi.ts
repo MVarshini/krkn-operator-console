@@ -28,7 +28,8 @@ import type {
   FileTypeResponse,
   FileTypesListResponse,
   CreateFileTypeRequest,
-  UpdateFileTypeRequest
+  UpdateFileTypeRequest,
+  JobConfigResponse
 } from '../types/api';
 
 class OperatorApiClient extends BaseApiClient {
@@ -215,6 +216,16 @@ class OperatorApiClient extends BaseApiClient {
    */
   async getScenarioRunStatus(scenarioRunName: string): Promise<ScenarioRunStatusResponse> {
     return this.fetchJson<ScenarioRunStatusResponse>(`/scenarios/run/${encodeURIComponent(scenarioRunName)}`);
+  }
+
+  /**
+   * GET /api/v1/scenarios/run/jobs/{jobId}/config
+   * Get the environment configuration used for a specific job
+   * @param jobId - Job ID to get configuration for
+   * @returns Promise with the job's environment configuration
+   */
+  async getJobConfig(jobId: string): Promise<JobConfigResponse> {
+    return this.fetchJson<JobConfigResponse>(`/scenarios/run/replay/${encodeURIComponent(jobId)}`);
   }
 
   /**

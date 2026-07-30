@@ -39,6 +39,7 @@ import {
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
   TrashIcon,
+  RedoIcon,
   LockIcon,
   TopologyIcon,
   FileIcon,
@@ -81,6 +82,7 @@ interface JobsListProps {
   onDeleteJob: (jobId: string) => Promise<void>;
   onCreateJob: () => void;
   onNavigateToStudio: () => void;
+  onRerunScenario: (run: ScenarioRunState, jobId: string) => void;
   // GraphRuns props
   graphRuns: GraphRunState[];
   expandedGraphRunIds: Set<string>;
@@ -98,6 +100,7 @@ export function JobsList({
   onDeleteJob,
   onCreateJob,
   onNavigateToStudio,
+  onRerunScenario,
   graphRuns: _graphRuns, // Not used - GraphRuns are derived from scenarioRuns
   expandedGraphRunIds,
   onToggleGraphRunAccordion,
@@ -1074,7 +1077,16 @@ export function JobsList({
                                             </div>
                                           </DataListCell>,
                                           <DataListCell key="actions" width={1}>
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '0.25rem' }}>
+                                              {job.completionTime && (
+                                                <Button
+                                                  variant="plain"
+                                                  aria-label="Re-run scenario"
+                                                  onClick={() => onRerunScenario(run, job.jobId)}
+                                                  icon={<RedoIcon style={{ fontSize: '1.2rem' }} />}
+                                                  style={{ color: 'var(--pf-v5-global--link--Color)' }}
+                                                />
+                                              )}
                                               {job.phase === 'Running' && (
                                                 <Button
                                                   variant="plain"
