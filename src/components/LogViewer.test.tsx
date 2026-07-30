@@ -38,16 +38,16 @@ describe('LogViewer download', () => {
       expect(menuToggle).toBeDefined();
     });
 
-    it('shows HTML, JSON, PDF options when opened', async () => {
+    it('shows Text, HTML, JSON options when opened', async () => {
       const user = userEvent.setup();
       render(<LogViewer {...defaultProps} />);
 
       const menuToggle = screen.getAllByRole('button').find(btn => btn.classList.contains('pf-v5-c-menu-toggle'));
       await user.click(menuToggle!);
 
+      expect(screen.getByText('Text')).toBeInTheDocument();
       expect(screen.getByText('HTML')).toBeInTheDocument();
       expect(screen.getByText('JSON')).toBeInTheDocument();
-      expect(screen.getByText('PDF')).toBeInTheDocument();
     });
 
     it('closes dropdown after selecting an option', async () => {
@@ -97,6 +97,28 @@ describe('LogViewer download', () => {
     });
   });
 
+  describe('Text download', () => {
+    it('creates a plain text blob with ANSI codes stripped', async () => {
+      const user = userEvent.setup();
+      let capturedBlob: Blob | null = null;
+
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob) => {
+        capturedBlob = blob;
+        return 'blob:mock-url';
+      });
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+      render(<LogViewer {...defaultProps} />);
+      await clickDropdownItem(user, 'Text');
+
+      expect(capturedBlob).not.toBeNull();
+      const text = await capturedBlob!.text();
+      expect(capturedBlob!.type).toBe('text/plain');
+      expect(text).not.toContain('<');
+      expect(text).not.toContain('');
+    });
+  });
+
   describe('JSON download', () => {
     it('produces JSON with podName, logs array, totalLines, and exportedAt', async () => {
       const user = userEvent.setup();
@@ -119,53 +141,6 @@ describe('LogViewer download', () => {
       expect(parsed.totalLines).toBe(parsed.logs.length);
       expect(parsed.exportedAt).toBeDefined();
       expect(new Date(parsed.exportedAt).getTime()).not.toBeNaN();
-    });
-  });
-
-  describe('PDF download', () => {
-    it('opens a new window with the blob URL', async () => {
-      const user = userEvent.setup();
-      const mockPrintWindow = { onload: null as (() => void) | null, focus: vi.fn(), print: vi.fn() };
-      const openSpy = vi.fn(() => mockPrintWindow);
-      vi.stubGlobal('open', openSpy);
-
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:pdf-url');
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      render(<LogViewer {...defaultProps} />);
-      await clickDropdownItem(user, 'PDF');
-
-      expect(openSpy).toHaveBeenCalledWith('blob:pdf-url', '_blank');
-    });
-
-    it('generates print-friendly CSS with black text on white background', async () => {
-      const user = userEvent.setup();
-      let capturedBlob: Blob | null = null;
-
-      vi.stubGlobal('open', vi.fn(() => ({ onload: null, focus: vi.fn(), print: vi.fn() })));
-      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob) => { capturedBlob = blob; return 'blob:pdf-url'; });
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      render(<LogViewer {...defaultProps} />);
-      await clickDropdownItem(user, 'PDF');
-
-      const html = await capturedBlob!.text();
-      expect(html).toContain('background-color: #ffffff !important');
-      expect(html).toContain('color: #000000 !important');
-      expect(html).toContain('@media print');
-      expect(html).toContain('font-size: 10px');
-    });
-
-    it('cleans up blob URL when popup is blocked', async () => {
-      const user = userEvent.setup();
-      vi.stubGlobal('open', vi.fn(() => null));
-      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:blocked-url');
-      const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-
-      render(<LogViewer {...defaultProps} />);
-      await clickDropdownItem(user, 'PDF');
-
-      expect(revokeSpy).toHaveBeenCalledWith('blob:blocked-url');
     });
   });
 });

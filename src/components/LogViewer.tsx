@@ -115,6 +115,12 @@ ${htmlLines.map(line => `<div>${line}</div>`).join('\n')}
     setIsDownloadOpen(false);
   };
 
+  const handleDownloadText = () => {
+    const plainText = logs.map(log => Anser.ansiToText(log)).join('\n');
+    triggerDownload(plainText, `logs-${podName}.txt`, 'text/plain');
+    setIsDownloadOpen(false);
+  };
+
   const handleDownloadJson = () => {
     const jsonContent = JSON.stringify({
       podName,
@@ -123,25 +129,6 @@ ${htmlLines.map(line => `<div>${line}</div>`).join('\n')}
       logs,
     }, null, 2);
     triggerDownload(jsonContent, `logs-${podName}.json`, 'application/json');
-    setIsDownloadOpen(false);
-  };
-
-  const handleDownloadPdf = () => {
-    const htmlContent = generateStyledHtml('10px', true);
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const blobUrl = URL.createObjectURL(blob);
-    const printWindow = window.open(blobUrl, '_blank');
-
-    if (printWindow) {
-      printWindow.onload = () => {
-        printWindow.focus();
-        printWindow.print();
-        URL.revokeObjectURL(blobUrl);
-      };
-    } else {
-      URL.revokeObjectURL(blobUrl);
-    }
-
     setIsDownloadOpen(false);
   };
 
@@ -210,8 +197,7 @@ ${htmlLines.map(line => `<div>${line}</div>`).join('\n')}
             <FlexItem>
               <Flex spaceItems={{ default: 'spaceItemsSm' }}>
                 <FlexItem>
-                  <Button variant="control" icon={<CopyIcon />} onClick={handleCopyLogs} size="sm" />
-                   
+                  <Button variant="control" icon={<CopyIcon />} onClick={handleCopyLogs} size="sm" aria-label="Copy logs to clipboard" />
                 </FlexItem>
                 <FlexItem>
                   <Dropdown
@@ -221,6 +207,7 @@ ${htmlLines.map(line => `<div>${line}</div>`).join('\n')}
                       <MenuToggle
                         variant="default"
                         ref={toggleRef}
+                        aria-label="Download logs"
                         onClick={() => setIsDownloadOpen(!isDownloadOpen)}
                         isExpanded={isDownloadOpen}
                       >
@@ -230,14 +217,14 @@ ${htmlLines.map(line => `<div>${line}</div>`).join('\n')}
                     shouldFocusToggleOnSelect
                   >
                     <DropdownList>
+                      <DropdownItem key="text" onClick={handleDownloadText}>
+                        Text
+                      </DropdownItem>
                       <DropdownItem key="html" onClick={handleDownloadHtml}>
                         HTML
                       </DropdownItem>
                       <DropdownItem key="json" onClick={handleDownloadJson}>
                         JSON
-                      </DropdownItem>
-                      <DropdownItem key="pdf" onClick={handleDownloadPdf}>
-                        PDF
                       </DropdownItem>
                     </DropdownList>
                   </Dropdown>
