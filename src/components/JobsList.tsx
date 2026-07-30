@@ -26,8 +26,6 @@ import {
   SelectList,
   MenuToggle,
   MenuToggleAction,
-  Alert,
-  AlertActionLink,
   Tooltip,
   Dropdown,
   DropdownList,
@@ -53,42 +51,39 @@ import { JobStatsSummary } from './JobStatsSummary';
 import { FileManagementModal } from './FileManagement';
 import { useRole } from '../hooks/useRole';
 import { useActiveRunsPoller } from '../hooks/useActiveRunsPoller';
+import { ResiliencyScoreTooltip } from './ResiliencyScoreTooltip';
 
-import type { ScenarioRunState, ScenarioRunPhase, ClusterJobPhase, GraphRunState, GraphRunSummary, ResiliencyScoreResponse } from '../types/api';
+import type { ScenarioRunState, ScenarioRunPhase, ClusterJobPhase, GraphRunState, GraphRunSummary, GraphClusterScore } from '../types/api';
 
 // Unified run item type - can be either a GraphRun or a standalone ScenarioRun
 export type UnifiedRunItem =
   | {
-    type: 'graph';
-    graphRunName: string;
-    nodes: ScenarioRunState[];
-    phase: ScenarioRunPhase;
-    createdAt: string;
-    ownerUserId?: string;
-    summary: GraphRunSummary;
-    // Resiliency score fields
-    resiliencyScoreEnabled?: boolean;
-    resiliencyScoreBaseline?: number;
-    resiliencyScore?: ResiliencyScoreResponse;
-  }
+      type: 'graph';
+      graphRunName: string;
+      nodes: ScenarioRunState[];
+      phase: ScenarioRunPhase;
+      createdAt: string;
+      ownerUserId?: string;
+      summary: GraphRunSummary;
+      resiliencyScoreEnabled?: boolean;
+      resiliencyScoreBaseline?: number;
+      resiliencyScores?: GraphClusterScore[];
+    }
   | { type: 'scenario'; run: ScenarioRunState };
 
 interface JobsListProps {
   scenarioRuns: ScenarioRunState[];
   expandedRunIds: Set<string>;
   expandedJobIds: Set<string>;
-  pausedPollingRunIds: Set<string>;
   onToggleRunAccordion: (scenarioRunName: string) => void;
   onToggleJobAccordion: (jobId: string) => void;
   onDeleteScenarioRun: (scenarioRunName: string) => Promise<void>;
   onDeleteJob: (jobId: string) => Promise<void>;
   onCreateJob: () => void;
-  onRefreshScenarioRun: (scenarioRunName: string) => void;
   onNavigateToStudio: () => void;
   // GraphRuns props
   graphRuns: GraphRunState[];
   expandedGraphRunIds: Set<string>;
-  pausedGraphPollingIds: Set<string>;
   onToggleGraphRunAccordion: (graphRunName: string) => void;
   onDeleteGraphRun: (graphRunName: string) => Promise<void>;
 }
@@ -97,17 +92,14 @@ export function JobsList({
   scenarioRuns,
   expandedRunIds,
   expandedJobIds,
-  pausedPollingRunIds,
   onToggleRunAccordion,
   onToggleJobAccordion,
   onDeleteScenarioRun,
   onDeleteJob,
   onCreateJob,
-  onRefreshScenarioRun,
   onNavigateToStudio,
   graphRuns: _graphRuns, // Not used - GraphRuns are derived from scenarioRuns
   expandedGraphRunIds,
-  pausedGraphPollingIds: _pausedGraphPollingIds, // Not used yet - polling via useGraphRunsPoller
   onToggleGraphRunAccordion,
   onDeleteGraphRun,
 }: JobsListProps) {
@@ -173,25 +165,6 @@ export function JobsList({
     }
   };
 
-  // Get resiliency score display with color based on ratio
-  const getResiliencyScoreDisplay = (score: number, baseline: number) => {
-    const ratio = score / baseline;
-
-    if (ratio >= 1.0) {
-      return { color: 'green' as const, label: score.toFixed(1), icon: <CheckCircleIcon /> };
-    }
-    if (ratio >= 0.95) {
-      return { color: 'green' as const, label: score.toFixed(1), icon: <CheckCircleIcon /> };
-    }
-    if (ratio >= 0.9) {
-      return { color: 'orange' as const, label: score.toFixed(1), icon: <ExclamationTriangleIcon /> };
-    }
-    if (ratio >= 0.8) {
-      return { color: 'orange' as const, label: score.toFixed(1), icon: <ExclamationTriangleIcon /> };
-    }
-    return { color: 'red' as const, label: score.toFixed(1), icon: <ExclamationCircleIcon /> };
-  };
-
   const handleConfirmDeleteRun = async () => {
     if (!confirmDeleteRun) return;
 
@@ -242,6 +215,9 @@ export function JobsList({
     // Date range filter
     if (dateFrom || dateTo) {
       const runDate = new Date(run.createdAt);
+
+      // Guard: exclude runs with invalid/empty createdAt when a date filter is active
+      if (isNaN(runDate.getTime())) return false;
 
       if (dateFrom) {
         const fromDate = new Date(dateFrom);
@@ -304,7 +280,7 @@ export function JobsList({
         summary: graphRunState.summary,
         resiliencyScoreEnabled: graphRunState.resiliencyScoreEnabled,
         resiliencyScoreBaseline: graphRunState.resiliencyScoreBaseline,
-        resiliencyScore: graphRunState.resiliencyScore,
+        resiliencyScores: graphRunState.resiliencyScores,
       });
     });
 
@@ -366,7 +342,7 @@ export function JobsList({
       } else {
         const aDate = a.type === 'graph' ? a.createdAt : a.run.createdAt;
         const bDate = b.type === 'graph' ? b.createdAt : b.run.createdAt;
-        cmp = aDate.localeCompare(bDate);
+        cmp = (Date.parse(aDate) || 0) - (Date.parse(bDate) || 0);
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -767,30 +743,10 @@ export function JobsList({
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>Resiliency Score:</strong>
                               </div>
-                              {item.resiliencyScoreEnabled ? (
-                                item.resiliencyScore && item.resiliencyScoreBaseline !== undefined ? (
-                                  <Tooltip
-                                    content={`Score: ${item.resiliencyScore.calculated.toFixed(1)} / Baseline: ${item.resiliencyScoreBaseline.toFixed(1)} (${item.resiliencyScore.status})`}
-                                  >
-                                    <Label
-                                      color={getResiliencyScoreDisplay(item.resiliencyScore.calculated, item.resiliencyScoreBaseline).color}
-                                      icon={getResiliencyScoreDisplay(item.resiliencyScore.calculated, item.resiliencyScoreBaseline).icon}
-                                    >
-                                      {getResiliencyScoreDisplay(item.resiliencyScore.calculated, item.resiliencyScoreBaseline).label}
-                                    </Label>
-                                  </Tooltip>
-                                ) : (
-                                  <Tooltip content="Score calculation in progress...">
-                                    <Label color="grey" icon={<SyncAltIcon className="pf-m-spin" />}>
-                                      Calculating...
-                                    </Label>
-                                  </Tooltip>
-                                )
-                              ) : (
-                                <Tooltip content="Resiliency score not enabled for this run">
-                                  <Label color="grey">N/A</Label>
-                                </Tooltip>
-                              )}
+                              <ResiliencyScoreTooltip
+                                scores={item.resiliencyScores}
+                                baseline={item.resiliencyScoreBaseline}
+                              />
                             </div>
                           </DataListCell>,
                           <DataListCell key="created" width={2}>
@@ -1042,31 +998,6 @@ export function JobsList({
                   >
                     {isRunExpanded && (
                       <>
-                        {/* Show banner when polling is paused for this run */}
-                        {pausedPollingRunIds.has(run.scenarioRunName) && (
-                          <Alert
-                            variant="info"
-                            isInline
-                            title={['Succeeded', 'PartiallyFailed', 'Failed'].includes(run.phase)
-                              ? "View mode"
-                              : "Live updates paused"}
-                            actionLinks={
-                              !['Succeeded', 'PartiallyFailed', 'Failed'].includes(run.phase) && (
-                                <AlertActionLink onClick={() => onRefreshScenarioRun(run.scenarioRunName)}>
-                                  Refresh now
-                                </AlertActionLink>
-                              )
-                            }
-                            style={{ marginBottom: '1rem' }}
-                          >
-                            <p>
-                              {['Succeeded', 'PartiallyFailed', 'Failed'].includes(run.phase)
-                                ? "This run has completed. Close this view to resume monitoring active runs."
-                                : "Automatic updates are paused while viewing this run to prevent log interruptions. Close this view to resume automatic updates, or click \"Refresh now\" for a manual update."}
-                            </p>
-                          </Alert>
-                        )}
-
                         {run.clusterJobs && run.clusterJobs.length > 0 ? (
                           <div style={{ paddingLeft: '2rem' }}>
                             <DataList aria-label="Cluster jobs list" isCompact>

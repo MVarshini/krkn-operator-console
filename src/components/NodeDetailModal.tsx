@@ -225,6 +225,36 @@ export function NodeDetailModal({ nodeStatus, onClose }: NodeDetailModalProps) {
             <DescriptionListDescription>{nodeStatus.message}</DescriptionListDescription>
           </DescriptionListGroup>
         )}
+
+        {nodeStatus.resiliencyScores && nodeStatus.resiliencyScores.length > 0 && (
+          <DescriptionListGroup>
+            <DescriptionListTerm>Resiliency Score{nodeStatus.resiliencyScores.length > 1 ? 's' : ''}</DescriptionListTerm>
+            <DescriptionListDescription>
+              <Flex spaceItems={{ default: 'spaceItemsSm' }} direction={{ default: nodeStatus.resiliencyScores.length > 1 ? 'column' : 'row' }}>
+                {nodeStatus.resiliencyScores.map((cs) => {
+                  const scoreValue = cs.score;
+                  return (
+                    <FlexItem key={cs.clusterName}>
+                      <Label
+                        color={scoreValue >= 80 ? (scoreValue >= 95 ? 'green' : 'orange') : 'red'}
+                        icon={scoreValue >= 95 ? <CheckCircleIcon /> : <ExclamationCircleIcon />}
+                      >
+                        {nodeStatus.resiliencyScores!.length > 1 && `${cs.clusterName}: `}{scoreValue.toFixed(1)}
+                      </Label>
+                    </FlexItem>
+                  );
+                })}
+                {nodeStatus.resiliencyScores.length > 1 && nodeStatus.resiliencyScoreAvg !== undefined && (
+                  <FlexItem>
+                    <Label color="blue">
+                      Average: {nodeStatus.resiliencyScoreAvg.toFixed(1)}
+                    </Label>
+                  </FlexItem>
+                )}
+              </Flex>
+            </DescriptionListDescription>
+          </DescriptionListGroup>
+        )}
       </DescriptionList>
 
       <hr style={{ margin: '1.5rem 0', border: 'none', borderTop: '1px solid var(--pf-v5-global--BorderColor--100)' }} />

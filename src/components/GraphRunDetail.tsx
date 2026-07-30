@@ -36,9 +36,10 @@ import {
   ExclamationCircleIcon,
   BanIcon,
 } from '@patternfly/react-icons';
-import type { GraphRunDetail, NodeStatus } from '../types/api';
+import type { GraphRunDetail, NodeStatus, ClusterResiliencyScore, GraphClusterScore } from '../types/api';
 import { graphRunsApi } from '../services';
 import { ScenarioRunDetailModal } from './ScenarioRunDetailModal';
+import { getScoreColor, getScoreLevel, formatScore, SCORE_CALCULATING } from '../utils/resiliency';
 
 interface GraphRunDetailProps {
   /** Name of the graph run to visualize */
@@ -46,14 +47,245 @@ interface GraphRunDetailProps {
 }
 
 /**
+ * Per-cluster resiliency score list with search and scrollable container
+ */
+function ClusterScoresSection({ scores }: { scores: GraphClusterScore[] }) {
+  const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
+  const [searchFilter, setSearchFilter] = useState('');
+
+  const toggleCluster = (clusterName: string) => {
+    setExpandedClusters(prev => {
+      const next = new Set(prev);
+      if (next.has(clusterName)) next.delete(clusterName);
+      else next.add(clusterName);
+      return next;
+    });
+  };
+
+  const filteredScores = searchFilter
+    ? scores.filter(cs => cs.clusterName.toLowerCase().includes(searchFilter.toLowerCase()))
+    : scores;
+
+  return (
+    <div style={{
+      marginBottom: '1rem',
+      border: '1px solid var(--pf-v5-global--BorderColor--100)',
+      borderRadius: '6px',
+      overflow: 'hidden',
+    }}>
+      {/* Header bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 12px',
+        backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+        borderBottom: '1px solid var(--pf-v5-global--BorderColor--100)',
+        gap: '12px',
+        flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}>
+          Cluster Scores
+          <Label color="blue" isCompact>{scores.length}</Label>
+        </div>
+        {scores.length > 3 && (
+          <input
+            type="text"
+            placeholder="Search cluster..."
+            value={searchFilter}
+            onChange={e => setSearchFilter(e.target.value)}
+            aria-label="Search clusters"
+            style={{
+              padding: '4px 8px',
+              fontSize: '12px',
+              border: '1px solid var(--pf-v5-global--BorderColor--100)',
+              borderRadius: '4px',
+              backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
+              color: 'var(--pf-v5-global--Color--100)',
+              width: '180px',
+              outline: 'none',
+            }}
+          />
+        )}
+      </div>
+
+      {/* Scrollable list */}
+      <div style={{
+        maxHeight: '240px',
+        overflowY: 'auto',
+      }}>
+        {filteredScores.length === 0 ? (
+          <div style={{ padding: '16px', textAlign: 'center', color: 'var(--pf-v5-global--Color--200)', fontSize: '12px' }}>
+            No clusters match &quot;{searchFilter}&quot;
+          </div>
+        ) : (
+          filteredScores.map((cs, idx) => {
+            const calculating = cs.calculated === SCORE_CALCULATING;
+            const bgColor = calculating ? '#6c757d' : (cs.baseline != null ? getScoreColor(cs.calculated, cs.baseline) : '#17a2b8');
+            const level = !calculating && cs.baseline != null ? getScoreLevel(cs.calculated, cs.baseline) : null;
+            const contributions = cs.nodeContributions ? Object.entries(cs.nodeContributions) : [];
+            const isExpanded = expandedClusters.has(cs.clusterName);
+
+            return (
+              <div
+                key={cs.clusterName}
+                style={{
+                  borderBottom: idx < filteredScores.length - 1 ? '1px solid var(--pf-v5-global--BorderColor--100)' : 'none',
+                  borderLeft: `4px solid ${bgColor}`,
+                  padding: '8px 12px',
+                }}
+              >
+                {/* Main row */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                }}>
+                  {/* Cluster name */}
+                  <span style={{
+                    fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    minWidth: '160px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {cs.clusterName}
+                  </span>
+
+                  {calculating ? (
+                    <>
+                      <SyncAltIcon className="pf-m-spin" style={{ color: '#6c757d' }} />
+                      <Label color="grey" icon={<SyncAltIcon className="pf-m-spin" />} isCompact>
+                        Calculating...
+                      </Label>
+                    </>
+                  ) : (
+                    <>
+                      {/* Score */}
+                      <span style={{ fontSize: '16px', fontWeight: 'bold', color: bgColor, minWidth: '45px' }}>
+                        {formatScore(cs.calculated)}
+                      </span>
+
+                      {/* Level badge */}
+                      {level ? (
+                        level.label === 'No Baseline' ? (
+                          <Label color="blue" isCompact>No Baseline</Label>
+                        ) : (
+                          <Tooltip content={level.description}>
+                            <Label
+                              color={
+                                level.label === 'Excellent' || level.label === 'Good' ? 'green'
+                                  : level.label === 'Warning' || level.label === 'Poor' ? 'orange'
+                                  : 'red'
+                              }
+                              icon={
+                                level.label === 'Excellent' || level.label === 'Good'
+                                  ? <CheckCircleIcon />
+                                  : level.label === 'Critical'
+                                  ? <ExclamationCircleIcon />
+                                  : undefined
+                              }
+                              isCompact
+                            >
+                              {level.label}
+                            </Label>
+                          </Tooltip>
+                        )
+                      ) : (
+                        <Label color="blue" isCompact>No Baseline</Label>
+                      )}
+                    </>
+                  )}
+
+                  {/* Baseline info */}
+                  {cs.baseline != null && (
+                    <span style={{ fontSize: '11px', color: 'var(--pf-v5-global--Color--200)' }}>
+                      Baseline: {formatScore(cs.baseline)}
+                    </span>
+                  )}
+
+                  {/* Spacer */}
+                  <span style={{ flex: 1 }} />
+
+                  {/* Node breakdown toggle */}
+                  {contributions.length > 0 && (
+                    <button
+                      onClick={() => toggleCluster(cs.clusterName)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--pf-v5-global--link--Color)',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        padding: '2px 4px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {isExpanded ? '▾' : '▸'} {contributions.length} nodes
+                    </button>
+                  )}
+                </div>
+
+                {/* Expanded node contributions */}
+                {isExpanded && contributions.length > 0 && (
+                  <div style={{
+                    marginTop: '6px',
+                    marginLeft: '8px',
+                    borderLeft: '2px solid var(--pf-v5-global--BorderColor--100)',
+                    paddingLeft: '10px',
+                  }}>
+                    {contributions.map(([nodeId, nodeScore]) => {
+                      const nodeColor = cs.baseline != null ? getScoreColor(nodeScore, cs.baseline) : '#17a2b8';
+                      return (
+                        <div key={nodeId} style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '1px 0',
+                          fontSize: '11px',
+                          maxWidth: '300px',
+                        }}>
+                          <span style={{
+                            fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '200px',
+                          }}>
+                            {nodeId}
+                          </span>
+                          <span style={{ fontWeight: 'bold', color: nodeColor }}>
+                            {formatScore(nodeScore)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Custom node component for ReactFlow
- * Displays scenario name, status badge, and connections
+ * Displays scenario name, status badge, resiliency score, and connections
  */
 function ScenarioNode({ data }: NodeProps) {
-  const { nodeStatus, onClick } = data;
+  const { nodeStatus, onClick, resiliencyBaseline, resiliencyEnabled } = data;
   const phase = nodeStatus.phase as string;
+  const clusterScores: ClusterResiliencyScore[] | undefined = nodeStatus.resiliencyScores;
+  const nodeScore: number | undefined = nodeStatus.resiliencyScoreAvg
+    ?? (clusterScores?.length === 1 ? clusterScores[0].score : undefined);
+  const isMultiCluster = (clusterScores?.length ?? 0) > 1;
 
-  // Get phase display properties
   const getPhaseDisplay = (phase: string) => {
     switch (phase) {
       case 'Pending':
@@ -73,26 +305,75 @@ function ScenarioNode({ data }: NodeProps) {
 
   const phaseDisplay = getPhaseDisplay(phase);
 
+  const hasScore = resiliencyEnabled && nodeScore !== undefined;
+  const scoreColor = hasScore && resiliencyBaseline
+    ? getScoreColor(nodeScore, resiliencyBaseline)
+    : '#17a2b8';
+  const scoreLevel = hasScore && resiliencyBaseline
+    ? getScoreLevel(nodeScore, resiliencyBaseline)
+    : null;
+
+  const scoreTooltipContent = hasScore ? (
+    <div style={{ maxWidth: '300px' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '8px',
+        marginBottom: '8px', paddingBottom: '6px',
+        borderBottom: `2px solid ${scoreColor}`,
+      }}>
+        <div style={{
+          width: '28px', height: '28px', borderRadius: '6px',
+          backgroundColor: scoreColor, color: 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 'bold', fontSize: '11px',
+        }}>
+          {nodeScore.toFixed(1)}
+        </div>
+        <div>
+          <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
+            Resiliency Score{isMultiCluster ? ' (avg)' : ''}
+          </div>
+          <div style={{ fontSize: '11px', color: scoreColor, fontWeight: 600 }}>
+            {scoreLevel?.label}
+          </div>
+        </div>
+      </div>
+      <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+        <div style={{ marginBottom: '4px' }}>
+          This node scored <strong>{nodeScore.toFixed(1)}</strong>{isMultiCluster ? ' (average)' : ''} against a
+          workflow baseline of <strong>{resiliencyBaseline?.toFixed(1)}</strong>.
+        </div>
+        <div style={{ color: scoreColor, fontStyle: 'italic', fontSize: '11px', marginBottom: isMultiCluster ? '8px' : '0' }}>
+          {scoreLevel?.description}
+        </div>
+        {isMultiCluster && clusterScores && (
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '6px' }}>
+            <div style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '4px' }}>Per-Cluster Scores:</div>
+            {clusterScores.map((cs: ClusterResiliencyScore) => {
+              const clusterColor = resiliencyBaseline ? getScoreColor(cs.score, resiliencyBaseline) : '#17a2b8';
+              return (
+                <div key={cs.clusterName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                  <span style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>{cs.clusterName}</span>
+                  <span style={{ fontWeight: 'bold', fontSize: '11px', color: clusterColor }}>{cs.score.toFixed(1)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <>
-      {/* Add keyframe animation for running nodes */}
       {phase === 'Running' && (
         <style>{`
           @keyframes pulse-border {
-            0%, 100% {
-              box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4);
-            }
-            50% {
-              box-shadow: 0 0 0 8px rgba(0, 123, 255, 0);
-            }
+            0%, 100% { box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(0, 123, 255, 0); }
           }
           @keyframes glow {
-            0%, 100% {
-              filter: brightness(1);
-            }
-            50% {
-              filter: brightness(1.2);
-            }
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.2); }
           }
         `}</style>
       )}
@@ -109,7 +390,7 @@ function ScenarioNode({ data }: NodeProps) {
             'var(--pf-v5-global--warning-color--100)'
           }`,
           backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
-          minWidth: '200px',
+          minWidth: '220px',
           cursor: 'pointer',
           boxShadow: phase === 'Running'
             ? '0 2px 4px rgba(0,0,0,0.1), 0 0 0 0 rgba(0, 123, 255, 0.4)'
@@ -130,28 +411,64 @@ function ScenarioNode({ data }: NodeProps) {
           e.currentTarget.style.transform = 'translateY(0)';
         }}
       >
-      {/* Input handle for dependencies (left side for horizontal flow) */}
       <Handle
         type="target"
         position={Position.Left}
         style={{ background: 'var(--pf-v5-global--BorderColor--300)' }}
       />
 
-      {/* Node content */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {/* Status badge */}
-        <div>
+        {/* Top row: status badge + resiliency score badge */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
           <Label color={phaseDisplay.color} icon={phaseDisplay.icon} isCompact>
             {phaseDisplay.label}
           </Label>
+
+          {hasScore && (
+            <Tooltip content={scoreTooltipContent}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '4px',
+                backgroundColor: scoreColor,
+                color: 'white',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                transition: 'transform 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              >
+                {nodeScore.toFixed(1)}{isMultiCluster && <span style={{ fontSize: '9px', marginLeft: '2px', opacity: 0.8 }}>avg</span>}
+              </div>
+            </Tooltip>
+          )}
+
+          {resiliencyEnabled && !clusterScores?.length && (phase === 'Running' || phase === 'Completed') && (
+            <Tooltip content={
+              phase === 'Running'
+                ? "Resiliency score will be calculated when this node completes"
+                : "Resiliency score is being calculated..."
+            }>
+              <div style={{
+                backgroundColor: '#6c757d',
+                color: 'white',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                fontSize: '10px',
+                fontWeight: 'bold',
+              }}>
+                ···
+              </div>
+            </Tooltip>
+          )}
         </div>
 
-        {/* Scenario name */}
         <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
           {nodeStatus.nodeName}
         </div>
 
-        {/* Node ID (small, grey) */}
         <div
           style={{
             fontSize: '11px',
@@ -163,7 +480,6 @@ function ScenarioNode({ data }: NodeProps) {
         </div>
       </div>
 
-      {/* Output handle for dependents (right side for horizontal flow) */}
       <Handle
         type="source"
         position={Position.Right}
@@ -311,14 +627,19 @@ export function GraphRunDetail({ graphRunName }: GraphRunDetailProps) {
       (nodeStatus: NodeStatus) => nodeStatus.nodeId !== '_comment'
     );
 
+    const resiliencyEnabled = graphRunDetail.spec.resiliencyScoreEnabled ?? false;
+    const resiliencyBaseline = graphRunDetail.spec.resiliencyScoreBaseline;
+
     // Create nodes
     const reactFlowNodes: Node[] = nodeStatuses.map((nodeStatus: NodeStatus) => ({
       id: nodeStatus.nodeId,
       type: 'scenarioNode',
-      position: { x: 0, y: 0 }, // Will be calculated by dagre
+      position: { x: 0, y: 0 },
       data: {
         nodeStatus,
         onClick: handleNodeClick,
+        resiliencyEnabled,
+        resiliencyBaseline,
       },
     }));
 
@@ -407,11 +728,14 @@ export function GraphRunDetail({ graphRunName }: GraphRunDetailProps) {
     pendingNodes: filteredNodes.filter((ns: NodeStatus) => ns.phase === 'Pending').length,
   };
 
+  const clusterScoresOverall = graphRunDetail.status.resiliencyScores;
+  const specEnabled = graphRunDetail.spec.resiliencyScoreEnabled;
+
   return (
     <Card isFlat>
       <CardBody>
         {/* Graph summary */}
-        <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <Tooltip content="Total nodes in the graph">
             <Label color="blue" isCompact>
               Total: {summary.totalNodes}
@@ -437,7 +761,13 @@ export function GraphRunDetail({ graphRunName }: GraphRunDetailProps) {
               Pending: {summary.pendingNodes}
             </Label>
           </Tooltip>
+
         </div>
+
+        {/* Per-cluster resiliency score cards */}
+        {specEnabled && clusterScoresOverall && clusterScoresOverall.length > 0 && (
+          <ClusterScoresSection scores={clusterScoresOverall} />
+        )}
 
         {/* ReactFlow graph */}
         <div style={{ height: '600px', border: '1px solid var(--pf-v5-global--BorderColor--100)', borderRadius: '4px' }}>
