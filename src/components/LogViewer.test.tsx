@@ -67,8 +67,8 @@ describe('LogViewer download', () => {
       const user = userEvent.setup();
       let capturedBlob: Blob | null = null;
 
-      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob) => {
-        capturedBlob = blob;
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((obj: Blob | MediaSource) => {
+        capturedBlob = obj as Blob;
         return 'blob:mock-url';
       });
       vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
@@ -102,8 +102,8 @@ describe('LogViewer download', () => {
       const user = userEvent.setup();
       let capturedBlob: Blob | null = null;
 
-      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob) => {
-        capturedBlob = blob;
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((obj: Blob | MediaSource) => {
+        capturedBlob = obj as Blob;
         return 'blob:mock-url';
       });
       vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
@@ -124,8 +124,8 @@ describe('LogViewer download', () => {
       const user = userEvent.setup();
       let capturedBlob: Blob | null = null;
 
-      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob) => {
-        capturedBlob = blob;
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((obj: Blob | MediaSource) => {
+        capturedBlob = obj as Blob;
         return 'blob:mock-url';
       });
       vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
