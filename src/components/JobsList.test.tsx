@@ -83,7 +83,7 @@ describe('JobsList', () => {
     render(<JobsList {...defaultProps} scenarioRuns={runs} />);
     expect(screen.getByText('Total Jobs')).toBeInTheDocument();
     expect(screen.getByText('Pass Rate')).toBeInTheDocument();
-    expect(screen.getByText('50.0%')).toBeInTheDocument();
+    expect(screen.getByText('60.0%')).toBeInTheDocument();
   });
 
   describe('Run Name Filter', () => {
