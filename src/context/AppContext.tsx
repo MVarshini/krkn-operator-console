@@ -39,6 +39,8 @@ const initialState: AppState = {
   // Re-run workflow
   rerunIntent: null,
   startInPreview: false,
+  rerunScenarioImage: null,
+  rerunKubeconfigPath: null,
 
   // Error handling
   error: null,
@@ -335,6 +337,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         globalTouchedFields: null,
         rerunIntent: null,
         startInPreview: false,
+        rerunScenarioImage: null,
+        rerunKubeconfigPath: null,
         error: null,
       };
 
@@ -433,11 +437,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
       if (state.rerunIntent) {
         const initialValues: import('../types/api').ScenarioFormValues = {};
+        const secretVars = new Set(detail.fields.filter(f => f.secret).map(f => f.variable));
+        const knownVars = new Set(detail.fields.map(f => f.variable));
         detail.fields.forEach(f => {
           if (f.default !== undefined) initialValues[f.variable] = f.default;
         });
         Object.entries(state.rerunIntent.environment).forEach(([key, value]) => {
-          initialValues[key] = value;
+          if (knownVars.has(key) && !secretVars.has(key)) {
+            initialValues[key] = value;
+          }
         });
         formValues = initialValues;
       }
@@ -447,6 +455,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         phase: 'configuring_scenario',
         scenarioDetail: detail,
         scenarioFormValues: formValues,
+        rerunScenarioImage: state.rerunIntent?.scenarioImage ?? null,
+        rerunKubeconfigPath: state.rerunIntent?.kubeconfigPath ?? null,
         rerunIntent: null,
         error: null,
       };
@@ -508,6 +518,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         globalTouchedFields: null,
         rerunIntent: null,
         startInPreview: false,
+        rerunScenarioImage: null,
+        rerunKubeconfigPath: null,
         error: null,
       };
 
@@ -581,6 +593,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
               globalTouchedFields: null,
               rerunIntent: null,
               startInPreview: false,
+              rerunScenarioImage: null,
+              rerunKubeconfigPath: null,
             };
           }
           // Normal flow — back to scenarios list
@@ -594,6 +608,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
             globalFormValues: null,
             globalTouchedFields: null,
             startInPreview: false,
+            rerunScenarioImage: null,
+            rerunKubeconfigPath: null,
           };
 
         default:

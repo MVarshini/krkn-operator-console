@@ -52,7 +52,7 @@ interface ScenarioDetailProps {
 
 export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailProps) {
   const { state, dispatch } = useAppContext();
-  const { scenarioDetail, scenarioFormValues, scenarioGlobals, globalFormValues, globalTouchedFields, startInPreview } = state;
+  const { scenarioDetail, scenarioFormValues, scenarioGlobals, globalFormValues, globalTouchedFields, startInPreview, rerunScenarioImage, rerunKubeconfigPath } = state;
   const { showSuccess } = useNotifications();
   const [showPreview, setShowPreview] = useState(startInPreview);
   const [showOptionalFields, setShowOptionalFields] = useState(false);
@@ -368,7 +368,7 @@ export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailP
       }
 
       const isPrivateRegistry = !!registryConfig?.registryName;
-      const scenarioImage = isPrivateRegistry ? scenarioName : `krkn-hub:${scenarioName}`;
+      const scenarioImage = rerunScenarioImage ?? (isPrivateRegistry ? scenarioName : `krkn-hub:${scenarioName}`);
 
       const targetClusters: { [providerName: string]: string[] } = {};
       state.selectedClusters.forEach(cluster => {
@@ -383,7 +383,7 @@ export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailP
         targetClusters,
         scenarioImage,
         scenarioName,
-        kubeconfigPath: '/home/krkn/.kube/config',
+        kubeconfigPath: rerunKubeconfigPath ?? '/home/krkn/.kube/config',
         environment,
         files: files.length > 0 ? files : undefined,
         fileReferences: fileReferences.length > 0 ? fileReferences : undefined,

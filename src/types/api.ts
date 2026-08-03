@@ -105,6 +105,8 @@ export interface RerunIntent {
   registryName?: string;
   clusters: { operatorName: string; clusterName: string }[];
   environment: { [key: string]: string };
+  scenarioImage: string;
+  kubeconfigPath: string;
 }
 
 export interface JobConfigResponse {
@@ -463,6 +465,8 @@ export interface AppState {
   // Re-run workflow
   rerunIntent: RerunIntent | null;
   startInPreview: boolean;
+  rerunScenarioImage: string | null;
+  rerunKubeconfigPath: string | null;
 
   // Error handling
   error: AppError | null;

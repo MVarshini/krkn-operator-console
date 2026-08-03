@@ -172,6 +172,8 @@ function App() {
           registryName: run.registryName,
           clusters,
           environment: config.environment,
+          scenarioImage: config.scenarioImage,
+          kubeconfigPath: config.kubeconfigPath,
         },
       });
 
