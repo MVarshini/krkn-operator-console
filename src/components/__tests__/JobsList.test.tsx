@@ -61,6 +61,7 @@ const defaultProps = () => ({
   expandedGraphRunIds: new Set<string>(),
   onToggleGraphRunAccordion: vi.fn(),
   onDeleteGraphRun: vi.fn().mockResolvedValue(undefined),
+  onRerunScenario: vi.fn(),
 });
 
 const makeGraphRunState = (overrides?: Partial<GraphRunState>): GraphRunState => ({

@@ -100,6 +100,24 @@ export interface ScenariosRequest {
   registryName?: string;
 }
 
+export interface RerunIntent {
+  scenarioName: string;
+  registryName?: string;
+  clusters: { operatorName: string; clusterName: string }[];
+  environment: { [key: string]: string };
+  scenarioImage: string;
+  kubeconfigPath: string;
+}
+
+export interface JobConfigResponse {
+  targetRequestId: string;
+  targetClusters: { [operatorName: string]: string[] };
+  scenarioImage: string;
+  scenarioName: string;
+  kubeconfigPath: string;
+  environment: { [key: string]: string };
+}
+
 export interface ScenarioTag {
   name: string;
   digest?: string;
@@ -444,6 +462,12 @@ export interface AppState {
   globalFormValues: ScenarioFormValues | null;
   globalTouchedFields: TouchedFields | null;
 
+  // Re-run workflow
+  rerunIntent: RerunIntent | null;
+  startInPreview: boolean;
+  rerunScenarioImage: string | null;
+  rerunKubeconfigPath: string | null;
+
   // Error handling
   error: AppError | null;
 
@@ -505,6 +529,7 @@ export type AppAction =
   | { type: 'SCENARIOS_ERROR'; payload: AppError }
   | { type: 'SELECT_SCENARIOS'; payload: { scenarios: string[] } }
   | { type: 'SELECT_SCENARIO_FOR_DETAIL'; payload: { scenarioName: string } }
+  | { type: 'RERUN_SCENARIO'; payload: RerunIntent }
 
   // Scenario configuration
   | { type: 'SCENARIO_DETAIL_LOADING' }

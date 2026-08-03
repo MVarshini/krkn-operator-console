@@ -36,6 +36,12 @@ const initialState: AppState = {
   globalFormValues: null,
   globalTouchedFields: null,
 
+  // Re-run workflow
+  rerunIntent: null,
+  startInPreview: false,
+  rerunScenarioImage: null,
+  rerunKubeconfigPath: null,
+
   // Error handling
   error: null,
 
@@ -85,10 +91,28 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case 'POLL_SUCCESS':
+      if (state.rerunIntent) {
+        return {
+          ...state,
+          phase: 'loading_scenario_detail',
+          selectedClusters: state.rerunIntent.clusters.map(c => ({
+            operatorName: c.operatorName,
+            clusterName: c.clusterName,
+            clusterApiUrl: '',
+          })),
+          registryType: state.rerunIntent.registryName ? 'private' : 'public',
+          registryConfig: state.rerunIntent.registryName
+            ? { registryName: state.rerunIntent.registryName }
+            : {},
+          selectedScenario: state.rerunIntent.scenarioName,
+          startInPreview: true,
+          error: null,
+        };
+      }
       return {
         ...state,
-        phase: 'selecting_clusters', // Target ready → select clusters for job creation
-        clusters: null, // Reset to force fresh fetch with new UUID
+        phase: 'selecting_clusters',
+        clusters: null,
         error: null,
       };
 
@@ -311,6 +335,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
         scenarioGlobals: null,
         globalFormValues: null,
         globalTouchedFields: null,
+        rerunIntent: null,
+        startInPreview: false,
+        rerunScenarioImage: null,
+        rerunKubeconfigPath: null,
         error: null,
       };
 
@@ -383,6 +411,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
         selectedScenarios: action.payload.scenarios,
       };
 
+    case 'RERUN_SCENARIO':
+      return {
+        ...state,
+        rerunIntent: action.payload,
+      };
+
     case 'SELECT_SCENARIO_FOR_DETAIL':
       return {
         ...state,
@@ -397,13 +431,36 @@ function appReducer(state: AppState, action: AppAction): AppState {
         error: null,
       };
 
-    case 'SCENARIO_DETAIL_SUCCESS':
+    case 'SCENARIO_DETAIL_SUCCESS': {
+      const detail = action.payload.scenarioDetail;
+      let formValues = state.scenarioFormValues;
+
+      if (state.rerunIntent) {
+        const initialValues: import('../types/api').ScenarioFormValues = {};
+        const secretVars = new Set(detail.fields.filter(f => f.secret).map(f => f.variable));
+        const knownVars = new Set(detail.fields.map(f => f.variable));
+        detail.fields.forEach(f => {
+          if (f.default !== undefined) initialValues[f.variable] = f.default;
+        });
+        Object.entries(state.rerunIntent.environment).forEach(([key, value]) => {
+          if (knownVars.has(key) && !secretVars.has(key)) {
+            initialValues[key] = value;
+          }
+        });
+        formValues = initialValues;
+      }
+
       return {
         ...state,
         phase: 'configuring_scenario',
-        scenarioDetail: action.payload.scenarioDetail,
+        scenarioDetail: detail,
+        scenarioFormValues: formValues,
+        rerunScenarioImage: state.rerunIntent?.scenarioImage ?? null,
+        rerunKubeconfigPath: state.rerunIntent?.kubeconfigPath ?? null,
+        rerunIntent: null,
         error: null,
       };
+    }
 
     case 'SCENARIO_DETAIL_ERROR':
       return {
@@ -459,6 +516,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
         scenarioGlobals: null,
         globalFormValues: null,
         globalTouchedFields: null,
+        rerunIntent: null,
+        startInPreview: false,
+        rerunScenarioImage: null,
+        rerunKubeconfigPath: null,
         error: null,
       };
 
@@ -512,8 +573,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
             selectedScenarios: null,
           };
 
+        case 'loading_scenario_detail':
         case 'configuring_scenario':
-          // From scenario detail → back to scenarios list
+          if (!state.scenarios) {
+            // Came from rerun — go back to jobs list
+            return {
+              ...state,
+              phase: 'jobs_list',
+              uuid: null,
+              clusters: null,
+              selectedClusters: [],
+              registryType: null,
+              registryConfig: null,
+              selectedScenario: null,
+              scenarioDetail: null,
+              scenarioFormValues: null,
+              scenarioGlobals: null,
+              globalFormValues: null,
+              globalTouchedFields: null,
+              rerunIntent: null,
+              startInPreview: false,
+              rerunScenarioImage: null,
+              rerunKubeconfigPath: null,
+            };
+          }
+          // Normal flow — back to scenarios list
           return {
             ...state,
             phase: 'selecting_scenarios',
@@ -523,6 +607,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
             scenarioGlobals: null,
             globalFormValues: null,
             globalTouchedFields: null,
+            startInPreview: false,
+            rerunScenarioImage: null,
+            rerunKubeconfigPath: null,
           };
 
         default:
