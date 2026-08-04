@@ -75,9 +75,20 @@ describe('JobsList', () => {
   });
 
   it('renders JobStatsSummary when scenarioRuns are present', () => {
+    const makeJob = (phase: 'Succeeded' | 'Failed') => ({
+      providerName: 'krkn-operator',
+      clusterName: 'cluster-1',
+      jobId: `job-${Math.random()}`,
+      podName: 'pod-1',
+      phase,
+    });
     const runs = [
-      makeScenarioRun('run-1', 'Succeeded', { total: 3, succeeded: 3, failed: 0 }),
-      makeScenarioRun('run-2', 'Failed', { total: 2, succeeded: 0, failed: 2 }),
+      makeScenarioRun('run-1', 'Succeeded', { total: 3, succeeded: 3, failed: 0 }, {
+        clusterJobs: [makeJob('Succeeded'), makeJob('Succeeded'), makeJob('Succeeded')],
+      }),
+      makeScenarioRun('run-2', 'Failed', { total: 2, succeeded: 0, failed: 2 }, {
+        clusterJobs: [makeJob('Failed'), makeJob('Failed')],
+      }),
     ];
     render(<JobsList {...defaultProps} scenarioRuns={runs} />);
     expect(screen.getByText('Total Jobs')).toBeInTheDocument();
