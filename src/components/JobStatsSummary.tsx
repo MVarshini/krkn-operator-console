@@ -12,9 +12,18 @@ import {
   TachometerAltIcon,
 } from '@patternfly/react-icons';
 import type { UnifiedRunItem } from './JobsList';
+import type { ClusterJob } from '../types/api';
 
 interface JobStatsSummaryProps {
   unifiedRuns: UnifiedRunItem[];
+}
+
+function collectClusterJobs(items: UnifiedRunItem[]): ClusterJob[] {
+  return items.flatMap(item =>
+    item.type === 'scenario'
+      ? item.run.clusterJobs
+      : item.nodes.flatMap(node => node.clusterJobs)
+  );
 }
 
 const statCards = [
@@ -22,7 +31,7 @@ const statCards = [
     label: 'Total Jobs',
     icon: CubesIcon,
     color: 'var(--pf-v5-global--primary-color--100)',
-    subText: 'Total number of jobs across all scenario runs',
+    subText: 'Total cluster jobs across all runs',
     getValue: (stats: { total: number; succeeded: number; failed: number; passRate: string }) => stats.total,
   },
   {
@@ -50,34 +59,12 @@ const statCards = [
 
 export function JobStatsSummary({ unifiedRuns }: JobStatsSummaryProps) {
   const stats = useMemo(() => {
-    const counts = unifiedRuns.reduce(
-      (acc, item) => {
-        if (item.type === 'graph') {
-          if (item.nodes.length > 0) {
-            for (const run of item.nodes) {
-              acc.total += run.totalTargets || 0;
-              acc.succeeded += run.successfulJobs || 0;
-              acc.failed += run.failedJobs || 0;
-            }
-          } else if (item.summary) {
-            acc.total += item.summary.totalNodes || 0;
-            acc.succeeded += item.summary.completedNodes || 0;
-            acc.failed += item.summary.failedNodes || 0;
-          }
-        } else {
-          acc.total += item.run.totalTargets || 0;
-          acc.succeeded += item.run.successfulJobs || 0;
-          acc.failed += item.run.failedJobs || 0;
-        }
-        return acc;
-      },
-      { total: 0, succeeded: 0, failed: 0 },
-    );
-    const completed = counts.succeeded + counts.failed;
-    const passRate = completed > 0
-      ? ((counts.succeeded / completed) * 100).toFixed(1) + '%'
-      : 'N/A';
-    return { ...counts, passRate };
+    const jobs = collectClusterJobs(unifiedRuns);
+    const total = jobs.length;
+    const succeeded = jobs.filter(j => j.phase === 'Succeeded').length;
+    const failed = jobs.filter(j => j.phase === 'Failed').length;
+    const passRate = total > 0 ? ((succeeded / total) * 100).toFixed(1) + '%' : 'N/A';
+    return { total, succeeded, failed, passRate };
   }, [unifiedRuns]);
 
   return (

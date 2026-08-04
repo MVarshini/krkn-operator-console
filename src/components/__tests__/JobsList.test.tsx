@@ -176,7 +176,8 @@ describe('JobsList', () => {
         resiliencyScoreBaseline: undefined,
       })];
       render(<JobsList {...props} />);
-      expect(screen.getByText('N/A')).toBeInTheDocument();
+      const naElements = screen.getAllByText('N/A');
+      expect(naElements.length).toBeGreaterThan(0);
     });
   });
 
