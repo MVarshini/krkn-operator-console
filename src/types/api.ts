@@ -319,7 +319,7 @@ export interface ScenarioRunStatusResponse {
   failedJobs: number;
   runningJobs: number;
   clusterJobs: ClusterJob[];
-  createdAt?: string; // Optional - backend may include it in the future
+  creationTimestamp?: string;
   ownerUserId?: string; // Email of the user who created the run
   registryName?: string; // Name of private registry used (null for public Quay registry)
   graphRunName?: string; // Name of the parent GraphRun (if this ScenarioRun is part of a graph)
@@ -1121,8 +1121,10 @@ export interface UpdateFileResponse {
 export interface FileInfo {
   /** File UUID */
   fileId: string;
-  /** File name */
+  /** File name (ConfigMap data key) */
   fileName: string;
+  /** User-defined workflow name (only for workflow-template files) */
+  workflowName?: string;
   /** File description */
   description?: string;
   /** If true, available to all users */

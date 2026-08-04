@@ -8,6 +8,7 @@ import {
   TextInput,
   TextArea,
   ActionGroup,
+  Alert,
   Spinner,
   Radio,
   Select,
@@ -31,6 +32,7 @@ import { workflowsApi } from '../../services/workflowsApi';
 import { useStudioContext, buildGraph } from './StudioContext';
 import { useNotifications } from '../../hooks';
 import { useRole } from '../../hooks/useRole';
+import { isApiError } from '../../utils/apiClient';
 import type { GroupResponse } from '../../types/api';
 
 const FILENAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
@@ -74,6 +76,7 @@ export function SaveWorkflowModal({ isOpen, onClose, onSuccess }: SaveWorkflowMo
   const [isGroupSelectOpen, setIsGroupSelectOpen] = useState(false);
   const [groupSearchTerm, setGroupSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -111,6 +114,7 @@ export function SaveWorkflowModal({ isOpen, onClose, onSuccess }: SaveWorkflowMo
     const groupsArray = accessType === 'group' && selectedGroup ? [selectedGroup] : [];
 
     setIsSaving(true);
+    setError(null);
     try {
       const response = await workflowsApi.createWorkflow({
         workflowName: trimmedName,
@@ -132,7 +136,12 @@ export function SaveWorkflowModal({ isOpen, onClose, onSuccess }: SaveWorkflowMo
       handleClose();
       onSuccess();
     } catch (err) {
-      showError('Save failed', err instanceof Error ? err.message : 'Failed to save workflow');
+      if (isApiError(err) && err.status === 409) {
+        setValidationErrors(prev => ({ ...prev, name: `"${trimmedName}" already exists. Please choose a different name.` }));
+        setError(`A workflow named "${trimmedName}" already exists.`);
+      } else {
+        showError('Save failed', err instanceof Error ? err.message : 'Failed to save workflow');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -144,6 +153,7 @@ export function SaveWorkflowModal({ isOpen, onClose, onSuccess }: SaveWorkflowMo
     setAccessType('public');
     setSelectedGroup('');
     setValidationErrors({});
+    setError(null);
     setGroupsLoaded(false);
     onClose();
   };
@@ -156,6 +166,12 @@ export function SaveWorkflowModal({ isOpen, onClose, onSuccess }: SaveWorkflowMo
       onClose={handleClose}
     >
       <Form>
+        {error && (
+          <Alert variant="danger" isInline title="Name already exists" style={{ marginBottom: '1rem' }}>
+            {error}
+          </Alert>
+        )}
+
         <FormGroup label="Name" isRequired fieldId="workflow-name">
           <TextInput
             id="workflow-name"

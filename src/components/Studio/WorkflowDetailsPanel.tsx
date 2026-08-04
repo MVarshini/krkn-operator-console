@@ -32,6 +32,7 @@ import { workflowsApi } from '../../services/workflowsApi';
 import { useStudioContext, buildGraph } from './StudioContext';
 import { useNotifications } from '../../hooks';
 import { useRole } from '../../hooks/useRole';
+import { isApiError } from '../../utils/apiClient';
 import type { GroupResponse } from '../../types/api';
 
 const FILENAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
@@ -153,7 +154,12 @@ export function WorkflowDetailsPanel() {
       showSuccess('Workflow updated', `"${trimmedName}" updated successfully`);
       setIsEditingDetails(false);
     } catch (err) {
-      showError('Update failed', err instanceof Error ? err.message : 'Failed to update workflow');
+      if (isApiError(err) && err.status === 409) {
+        setValidationErrors(prev => ({ ...prev, name: `"${trimmedName}" already exists. Please choose a different name.` }));
+        showError('Name already exists', `A workflow named "${trimmedName}" already exists.`);
+      } else {
+        showError('Update failed', err instanceof Error ? err.message : 'Failed to update workflow');
+      }
     } finally {
       setIsSaving(false);
     }
