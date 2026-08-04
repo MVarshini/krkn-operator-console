@@ -326,6 +326,7 @@ export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailP
       const files: ScenarioFileMount[] = [];
 
       for (const field of scenarioDetail.fields) {
+        if (field.type === 'group') continue;
         const value = scenarioFormValues[field.variable];
 
         if (field.type === 'file') {
@@ -435,18 +436,18 @@ export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailP
     }
   };
 
-  const optionalFields = useMemo(
-    () => scenarioDetail?.fields.filter(field => !field.required) || [],
+  const hasGroupedScenarioFields = useMemo(
+    () => scenarioDetail?.fields.some(f => f.type === 'group') || false,
     [scenarioDetail?.fields]
   );
 
-  const requiredGlobalFields = useMemo(
-    () => scenarioGlobals?.fields.filter(field => field.required) || [],
-    [scenarioGlobals?.fields]
+  const optionalFields = useMemo(
+    () => scenarioDetail?.fields.filter(field => !field.required && field.type !== 'group') || [],
+    [scenarioDetail?.fields]
   );
 
-  const optionalGlobalFields = useMemo(
-    () => scenarioGlobals?.fields.filter(field => !field.required) || [],
+  const allGlobalFields = useMemo(
+    () => scenarioGlobals?.fields || [],
     [scenarioGlobals?.fields]
   );
 
@@ -537,12 +538,12 @@ export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailP
 
       {!showPreview ? (
         <>
-          {/* Required Fields Section */}
+          {/* Parameters Section */}
           <Card>
-            <CardTitle>Required Parameters</CardTitle>
+            <CardTitle>{hasGroupedScenarioFields ? 'Parameters' : 'Required Parameters'}</CardTitle>
             <CardBody>
               <DynamicFormBuilder
-                fields={scenarioDetail.fields.filter(field => field.required)}
+                fields={hasGroupedScenarioFields ? scenarioDetail.fields : scenarioDetail.fields.filter(field => field.required)}
                 values={scenarioFormValues || {}}
                 onChange={handleFormChange}
               />
@@ -569,8 +570,8 @@ export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailP
             optionalFields={optionalFields}
             formValues={scenarioFormValues || {}}
             onFormChange={handleFormChange}
-            requiredGlobalFields={requiredGlobalFields}
-            optionalGlobalFields={optionalGlobalFields}
+            suppressOptionalSection={hasGroupedScenarioFields}
+            allGlobalFields={allGlobalFields}
             globalFormValues={globalFormValues || {}}
             globalTouchedFields={globalTouchedFields || {}}
             onGlobalFormChange={handleGlobalFormChange}
@@ -611,7 +612,7 @@ export function ScenarioDetail({ scenarioName, registryConfig }: ScenarioDetailP
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {scenarioDetail.fields.map((field) => {
+                  {scenarioDetail.fields.filter(f => f.type !== 'group').map((field) => {
                     const value = scenarioFormValues?.[field.variable];
                     let displayValue: string;
 
