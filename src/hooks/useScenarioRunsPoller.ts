@@ -6,6 +6,8 @@ import { websocketService } from '../services/websocketService';
 import type { ServerMessage } from '../types/websocket';
 import type { ScenarioRunState, ScenarioRunStatusResponse } from '../types/api';
 
+export const TERMINAL_PHASES = ['Succeeded', 'Failed', 'PartiallyFailed'];
+
 /**
  * Hook to receive real-time scenario run updates via WebSocket.
  * Initial list+details fetched once via REST on first connect.
@@ -19,6 +21,7 @@ export function useScenarioRunsPoller() {
 
   const initialFetchDoneRef = useRef(false);
   const fetchedDetailsRef = useRef<Set<string>>(new Set());
+  const terminalFetchDoneRef = useRef<Set<string>>(new Set());
 
   const fetchRunDetails = useCallback(async (runName: string, base: ScenarioRunState) => {
     if (fetchedDetailsRef.current.has(runName)) return;
@@ -31,23 +34,26 @@ export function useScenarioRunsPoller() {
         return;
       }
 
+      const preserveTerminal = TERMINAL_PHASES.includes(base.phase);
       dispatch({
         type: 'UPDATE_SCENARIO_RUN',
         payload: {
-          run: {
-            ...base,
-            phase: details.phase,
-            totalTargets: details.totalTargets,
-            successfulJobs: details.successfulJobs,
-            failedJobs: details.failedJobs,
-            runningJobs: details.runningJobs,
-            clusterJobs: details.clusterJobs,
-            ownerUserId: details.ownerUserId || base.ownerUserId,
-            registryName: details.registryName || base.registryName,
-            graphRunName: details.graphRunName || base.graphRunName,
-            graphNodeId: details.graphNodeId || base.graphNodeId,
-            customRunName: details.customRunName || base.customRunName,
-          },
+          run: preserveTerminal
+            ? { ...base, clusterJobs: details.clusterJobs }
+            : {
+                ...base,
+                phase: details.phase,
+                totalTargets: details.totalTargets,
+                successfulJobs: details.successfulJobs,
+                failedJobs: details.failedJobs,
+                runningJobs: details.runningJobs,
+                clusterJobs: details.clusterJobs,
+                ownerUserId: details.ownerUserId || base.ownerUserId,
+                registryName: details.registryName || base.registryName,
+                graphRunName: details.graphRunName || base.graphRunName,
+                graphNodeId: details.graphNodeId || base.graphNodeId,
+                customRunName: details.customRunName || base.customRunName,
+              },
         },
       });
     } catch {
@@ -131,6 +137,15 @@ export function useScenarioRunsPoller() {
         if (hasChanges(existing, updatedState)) {
           dispatch({ type: 'UPDATE_SCENARIO_RUN', payload: { run: updatedState } });
         }
+
+        // On terminal phase transition without WS clusterJobs, fetch final details once
+        const isTerminalTransition =
+          !TERMINAL_PHASES.includes(existing.phase) && TERMINAL_PHASES.includes(data.phase);
+        if (isTerminalTransition && !hasWsJobs && !terminalFetchDoneRef.current.has(runName)) {
+          terminalFetchDoneRef.current.add(runName);
+          fetchedDetailsRef.current.delete(runName);
+          fetchRunDetails(runName, updatedState);
+        }
       } else {
         dispatch({ type: 'ADD_SCENARIO_RUN', payload: { run: updatedState } });
       }
@@ -141,6 +156,7 @@ export function useScenarioRunsPoller() {
       }
     } else if (message.event === 'deleted') {
       fetchedDetailsRef.current.delete(runName);
+      terminalFetchDoneRef.current.delete(runName);
       dispatch({
         type: 'LOAD_SCENARIO_RUNS_SUCCESS',
         payload: { runs: scenarioRunsRef.current.filter(r => r.scenarioRunName !== runName) },
@@ -158,31 +174,21 @@ export function useScenarioRunsPoller() {
     }
   }, [connectionState, fetchInitialScenarioRuns]);
 
-  // Periodically re-fetch details for expanded runs that are still active.
-  // Keeps clusterJob phases up-to-date until the per-run detail WebSocket is implemented.
-  useEffect(() => {
-    if (connectionState !== 'connected') return;
-
-    const intervalId = setInterval(() => {
-      const expandedIds = state.expandedRunIds;
-      const runs = scenarioRunsRef.current;
-
-      for (const runName of expandedIds) {
-        const run = runs.find(r => r.scenarioRunName === runName);
-        if (!run) continue;
-        if (['Succeeded', 'Failed', 'PartiallyFailed'].includes(run.phase)) continue;
-
-        fetchedDetailsRef.current.delete(runName);
-        fetchRunDetails(runName, run);
-      }
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [connectionState, state.expandedRunIds, fetchRunDetails]);
-
 }
 
-function hasChanges(prev: ScenarioRunState, next: ScenarioRunState): boolean {
+/**
+ * Shallow diff of the fields that affect UI rendering; true when a dispatch is needed.
+ *
+ * @example
+ * ```ts
+ * const prev: ScenarioRunState = { phase: 'Running', runningJobs: 2, ... };
+ * const next: ScenarioRunState = { phase: 'Succeeded', runningJobs: 0, ... };
+ * if (hasChanges(prev, next)) {
+ *   dispatch({ type: 'UPDATE_SCENARIO_RUN', payload: { run: next } });
+ * }
+ * ```
+ */
+export function hasChanges(prev: ScenarioRunState, next: ScenarioRunState): boolean {
   if (prev.phase !== next.phase) return true;
   if (prev.totalTargets !== next.totalTargets) return true;
   if (prev.runningJobs !== next.runningJobs) return true;
