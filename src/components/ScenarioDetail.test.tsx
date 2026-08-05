@@ -312,8 +312,9 @@ describe('ScenarioDetail', () => {
 
     it('should show loading spinner while fetching globals', async () => {
       const user = userEvent.setup();
+      let resolveGlobals!: (value: ScenarioGlobals) => void;
       vi.mocked(operatorApi.getScenarioGlobals).mockImplementation(
-        () => new Promise(resolve => setTimeout(() => resolve(mockScenarioGlobals), 100))
+        () => new Promise(resolve => { resolveGlobals = resolve; })
       );
 
       renderWithContext();
@@ -324,6 +325,8 @@ describe('ScenarioDetail', () => {
       await waitFor(() => {
         expect(screen.getByText('Loading global parameters...')).toBeInTheDocument();
       });
+
+      resolveGlobals(mockScenarioGlobals);
 
       await waitFor(() => {
         expect(mockDispatch).toHaveBeenCalledWith({
