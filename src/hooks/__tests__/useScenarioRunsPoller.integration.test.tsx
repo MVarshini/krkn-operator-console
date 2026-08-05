@@ -259,3 +259,130 @@ describe('useScenarioRunsPoller handleMessage integration', () => {
     expect(mockDispatch).not.toHaveBeenCalled();
   });
 });
+
+describe('useScenarioRunsPoller fetchRunDetails', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedHandler = null;
+    mockScenarioRuns = [];
+    mockConnectionState.value = 'connected';
+  });
+
+  it('dispatches SET_RUN_DETAILS_LOADING true then false around fetch', async () => {
+    const details: ScenarioRunStatusResponse = {
+      scenarioRunName: 'run-001',
+      phase: 'Running',
+      totalTargets: 1,
+      successfulJobs: 0,
+      failedJobs: 0,
+      runningJobs: 1,
+      clusterJobs: [{ providerName: 'krkn', clusterName: 'c1', jobId: 'j1', podName: 'p1', phase: 'Running', startTime: '' }],
+    };
+    vi.mocked(operatorApi.getScenarioRunStatus).mockResolvedValue(details);
+
+    const { result } = renderHook(() => useScenarioRunsPoller());
+    const base = makeRunState();
+
+    await act(async () => {
+      await result.current.fetchRunDetails('run-001', base);
+    });
+
+    const loadingCalls = mockDispatch.mock.calls.filter(
+      ([a]) => a.type === 'SET_RUN_DETAILS_LOADING' && a.payload.scenarioRunName === 'run-001',
+    );
+    expect(loadingCalls).toHaveLength(2);
+    expect(loadingCalls[0][0].payload.loading).toBe(true);
+    expect(loadingCalls[1][0].payload.loading).toBe(false);
+  });
+
+  it('skips fetch when already in-flight for the same run', async () => {
+    let resolveFirst: () => void;
+    const blockingPromise = new Promise<ScenarioRunStatusResponse>((resolve) => {
+      resolveFirst = () => resolve({
+        scenarioRunName: 'run-001',
+        phase: 'Running',
+        totalTargets: 1,
+        successfulJobs: 0,
+        failedJobs: 0,
+        runningJobs: 1,
+        clusterJobs: [{ providerName: 'krkn', clusterName: 'c1', jobId: 'j1', podName: 'p1', phase: 'Running', startTime: '' }],
+      });
+    });
+    vi.mocked(operatorApi.getScenarioRunStatus).mockReturnValue(blockingPromise);
+
+    const { result } = renderHook(() => useScenarioRunsPoller());
+    const base = makeRunState();
+
+    act(() => {
+      result.current.fetchRunDetails('run-001', base);
+    });
+
+    await act(async () => {
+      await result.current.fetchRunDetails('run-001', base);
+    });
+
+    expect(operatorApi.getScenarioRunStatus).toHaveBeenCalledTimes(1);
+
+    await act(async () => { resolveFirst!(); });
+  });
+
+  it('clears fetchedDetails when API returns empty clusterJobs', async () => {
+    const emptyDetails: ScenarioRunStatusResponse = {
+      scenarioRunName: 'run-001',
+      phase: 'Running',
+      totalTargets: 1,
+      successfulJobs: 0,
+      failedJobs: 0,
+      runningJobs: 1,
+      clusterJobs: [],
+    };
+    vi.mocked(operatorApi.getScenarioRunStatus).mockResolvedValue(emptyDetails);
+
+    const { result } = renderHook(() => useScenarioRunsPoller());
+    const base = makeRunState();
+
+    await act(async () => {
+      await result.current.fetchRunDetails('run-001', base);
+    });
+
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'UPDATE_SCENARIO_RUN' }),
+    );
+
+    vi.mocked(operatorApi.getScenarioRunStatus).mockResolvedValue({
+      ...emptyDetails,
+      clusterJobs: [{ providerName: 'krkn', clusterName: 'c1', jobId: 'j1', podName: 'p1', phase: 'Running', startTime: '' }],
+    });
+
+    await act(async () => {
+      await result.current.fetchRunDetails('run-001', base);
+    });
+
+    expect(operatorApi.getScenarioRunStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves terminal phase in dispatched update', async () => {
+    const details: ScenarioRunStatusResponse = {
+      scenarioRunName: 'run-001',
+      phase: 'Running',
+      totalTargets: 1,
+      successfulJobs: 1,
+      failedJobs: 0,
+      runningJobs: 0,
+      clusterJobs: [{ providerName: 'krkn', clusterName: 'c1', jobId: 'j1', podName: 'p1', phase: 'Succeeded', startTime: '' }],
+    };
+    vi.mocked(operatorApi.getScenarioRunStatus).mockResolvedValue(details);
+
+    const { result } = renderHook(() => useScenarioRunsPoller());
+    const base = makeRunState({ phase: 'Succeeded' });
+
+    await act(async () => {
+      await result.current.fetchRunDetails('run-001', base);
+    });
+
+    const updateCall = mockDispatch.mock.calls.find(([a]) => a.type === 'UPDATE_SCENARIO_RUN');
+    expect(updateCall).toBeDefined();
+    expect(updateCall![0].payload.run.phase).toBe('Succeeded');
+    expect(updateCall![0].payload.run.clusterJobs).toEqual(details.clusterJobs);
+  });
+});
