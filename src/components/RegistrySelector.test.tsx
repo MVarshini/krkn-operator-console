@@ -23,6 +23,7 @@ describe('RegistrySelector', () => {
     pollingRunNames: new Set(),
     expandedRunIds: new Set(),
     expandedClusterJobs: new Set(),
+    loadingRunDetails: new Set(),
     graphRuns: [],
     expandedGraphRunIds: new Set(),
     clusters: null,

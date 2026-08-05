@@ -13,6 +13,7 @@ import {
   DataListContent,
   EmptyState,
   EmptyStateIcon,
+  Spinner,
   EmptyStateBody,
   Title,
   Flex,
@@ -160,6 +161,7 @@ interface JobsListProps {
   expandedGraphRunIds: Set<string>;
   onToggleGraphRunAccordion: (graphRunName: string) => void;
   onDeleteGraphRun: (graphRunName: string) => Promise<void>;
+  loadingRunDetails: Set<string>;
 }
 
 export function JobsList({
@@ -175,6 +177,7 @@ export function JobsList({
   expandedGraphRunIds,
   onToggleGraphRunAccordion,
   onDeleteGraphRun,
+  loadingRunDetails,
 }: JobsListProps) {
   const { isAdmin } = useRole();
   const { activeRuns, loading: activeRunsLoading, error: activeRunsError } = useActiveRunsPoller();
@@ -1243,7 +1246,11 @@ export function JobsList({
                           </div>
                         ) : (
                           <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--pf-v5-global--Color--200)' }}>
-                            No jobs available for this scenario run
+                            {loadingRunDetails.has(run.scenarioRunName) ? (
+                              <Spinner size="lg" aria-label="Loading run details" />
+                            ) : (
+                              'No jobs available for this scenario run'
+                            )}
                           </div>
                         )}
                       </>

@@ -96,6 +96,7 @@ const defaultProps = () => ({
   onToggleGraphRunAccordion: vi.fn(),
   onDeleteGraphRun: vi.fn().mockResolvedValue(undefined),
   onRerunScenario: vi.fn(),
+  loadingRunDetails: new Set<string>(),
 });
 
 describe('JobsList', () => {

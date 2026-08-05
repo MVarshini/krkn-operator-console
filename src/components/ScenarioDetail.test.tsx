@@ -110,6 +110,7 @@ describe('ScenarioDetail', () => {
     pollingRunNames: new Set(),
     expandedRunIds: new Set(),
     expandedClusterJobs: new Set(),
+    loadingRunDetails: new Set(),
     providers: null,
     providerConfigUuid: null,
     providerConfigStatus: 'idle',

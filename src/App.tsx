@@ -44,7 +44,7 @@ function App() {
 
   // Initialize and manage the workflow
   useTargetPoller();
-  useScenarioRunsPoller(); // Poll scenario runs for status updates
+  const { fetchRunDetails } = useScenarioRunsPoller();
   useGraphRunsPoller(); // Poll graph runs for status updates
 
   const handleRetry = () => {
@@ -207,9 +207,16 @@ function App() {
             <JobsList
               expandedRunIds={state.expandedRunIds}
               expandedJobIds={state.expandedClusterJobs}
-              onToggleRunAccordion={(scenarioRunName) =>
-                dispatch({ type: 'TOGGLE_RUN_ACCORDION', payload: { scenarioRunName } })
-              }
+              onToggleRunAccordion={(scenarioRunName) => {
+                const isExpanding = !state.expandedRunIds.has(scenarioRunName);
+                dispatch({ type: 'TOGGLE_RUN_ACCORDION', payload: { scenarioRunName } });
+                if (isExpanding) {
+                  const run = state.scenarioRuns.find(r => r.scenarioRunName === scenarioRunName);
+                  if (run && (!run.clusterJobs || run.clusterJobs.length === 0)) {
+                    fetchRunDetails(scenarioRunName, run);
+                  }
+                }
+              }}
               onToggleJobAccordion={(jobId) =>
                 dispatch({ type: 'TOGGLE_CLUSTER_JOB_ACCORDION', payload: { jobId } })
               }
@@ -223,6 +230,7 @@ function App() {
                 dispatch({ type: 'TOGGLE_GRAPH_RUN_ACCORDION', payload: { graphRunName } })
               }
               onDeleteGraphRun={handleDeleteGraphRun}
+              loadingRunDetails={state.loadingRunDetails}
             />
           </PageSection>
         );

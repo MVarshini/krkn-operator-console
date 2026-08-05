@@ -15,6 +15,7 @@ const initialState: AppState = {
   pollingRunNames: new Set<string>(),
   expandedRunIds: new Set<string>(),
   expandedClusterJobs: new Set<string>(),
+  loadingRunDetails: new Set<string>(),
 
   // Graph runs list (GraphRun orchestration)
   graphRuns: [],
@@ -235,6 +236,16 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     }
 
+    case 'SET_RUN_DETAILS_LOADING': {
+      const newLoading = new Set(state.loadingRunDetails);
+      if (action.payload.loading) {
+        newLoading.add(action.payload.scenarioRunName);
+      } else {
+        newLoading.delete(action.payload.scenarioRunName);
+      }
+      return { ...state, loadingRunDetails: newLoading };
+    }
+
     case 'TOGGLE_CLUSTER_JOB_ACCORDION': {
       const newExpandedJobs = new Set(state.expandedClusterJobs);
       if (newExpandedJobs.has(action.payload.jobId)) {
@@ -253,26 +264,43 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return state; // Graph run created notification - actual data comes via polling
 
     case 'ADD_GRAPH_RUN': {
-      const graphRunExists = state.graphRuns.some(r => r.name === action.payload.run.name);
-      if (graphRunExists) {
+      const existingRun = state.graphRuns.find(r => r.name === action.payload.run.name);
+      const incoming = action.payload.run;
+      if (existingRun) {
+        const merged = {
+          ...existingRun,
+          ...incoming,
+          resiliencyScoreEnabled: incoming.resiliencyScoreEnabled ?? existingRun.resiliencyScoreEnabled,
+          resiliencyScoreBaseline: incoming.resiliencyScoreBaseline ?? existingRun.resiliencyScoreBaseline,
+          resiliencyScore: incoming.resiliencyScore ?? existingRun.resiliencyScore,
+          summary: incoming.summary || existingRun.summary,
+        };
         return {
           ...state,
           graphRuns: state.graphRuns.map(r =>
-            r.name === action.payload.run.name ? action.payload.run : r
+            r.name === incoming.name ? merged : r
           ),
         };
       }
       return {
         ...state,
-        graphRuns: [action.payload.run, ...state.graphRuns],
+        graphRuns: [incoming, ...state.graphRuns],
       };
     }
 
     case 'UPDATE_GRAPH_RUN': {
-      // Update existing graph run
-      const updatedGraphRuns = state.graphRuns.map(run =>
-        run.name === action.payload.run.name ? action.payload.run : run
-      );
+      const updatedGraphRuns = state.graphRuns.map(run => {
+        if (run.name !== action.payload.run.name) return run;
+        const incoming = action.payload.run;
+        return {
+          ...run,
+          ...incoming,
+          resiliencyScoreEnabled: incoming.resiliencyScoreEnabled ?? run.resiliencyScoreEnabled,
+          resiliencyScoreBaseline: incoming.resiliencyScoreBaseline ?? run.resiliencyScoreBaseline,
+          resiliencyScore: incoming.resiliencyScore ?? run.resiliencyScore,
+          summary: incoming.summary || run.summary,
+        };
+      });
       return {
         ...state,
         graphRuns: updatedGraphRuns,

@@ -55,6 +55,7 @@ const defaultProps = {
   onToggleGraphRunAccordion: noop,
   onDeleteGraphRun: noopAsync,
   onRerunScenario: noop,
+  loadingRunDetails: new Set<string>(),
 };
 
 function makeScenarioJobItem(
@@ -229,6 +230,7 @@ describe('JobsList - Re-run button', () => {
     expandedGraphRunIds: new Set<string>(),
     onToggleGraphRunAccordion: vi.fn(),
     onDeleteGraphRun: vi.fn(),
+    loadingRunDetails: new Set<string>(),
   };
 
   beforeEach(() => {

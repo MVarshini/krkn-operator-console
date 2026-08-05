@@ -17,7 +17,9 @@ export function useScenarioRunsPoller() {
   const { state, dispatch } = useAppContext();
 
   const scenarioRunsRef = useRef(state.scenarioRuns);
+  const expandedRunIdsRef = useRef(state.expandedRunIds);
   scenarioRunsRef.current = state.scenarioRuns;
+  expandedRunIdsRef.current = state.expandedRunIds;
 
   const initialFetchDoneRef = useRef(false);
   const fetchedDetailsRef = useRef<Set<string>>(new Set());
@@ -27,6 +29,7 @@ export function useScenarioRunsPoller() {
     if (fetchedDetailsRef.current.has(runName)) return;
     fetchedDetailsRef.current.add(runName);
 
+    dispatch({ type: 'SET_RUN_DETAILS_LOADING', payload: { scenarioRunName: runName, loading: true } });
     try {
       const details = await operatorApi.getScenarioRunStatus(runName);
       if (!details.clusterJobs || details.clusterJobs.length === 0) {
@@ -58,6 +61,8 @@ export function useScenarioRunsPoller() {
       });
     } catch {
       fetchedDetailsRef.current.delete(runName);
+    } finally {
+      dispatch({ type: 'SET_RUN_DETAILS_LOADING', payload: { scenarioRunName: runName, loading: false } });
     }
   }, [dispatch]);
 
@@ -93,17 +98,10 @@ export function useScenarioRunsPoller() {
         type: 'LOAD_SCENARIO_RUNS_SUCCESS',
         payload: { runs: scenarioRunStates },
       });
-
-      const runsWithoutJobs = scenarioRunStates.filter(
-        (run) => !run.clusterJobs || run.clusterJobs.length === 0
-      );
-      for (const run of runsWithoutJobs) {
-        fetchRunDetails(run.scenarioRunName, run);
-      }
     } catch {
       initialFetchDoneRef.current = false;
     }
-  }, [dispatch, fetchRunDetails]);
+  }, [dispatch]);
 
   const handleMessage = useCallback((message: ServerMessage) => {
     if (message.resource !== 'run') return;
@@ -150,8 +148,8 @@ export function useScenarioRunsPoller() {
         dispatch({ type: 'ADD_SCENARIO_RUN', payload: { run: updatedState } });
       }
 
-      // Fetch details if no clusterJobs from either source
-      if (!hasWsJobs && (!existing || existing.clusterJobs.length === 0)) {
+      // Only fetch details via WS if the run is currently expanded
+      if (!hasWsJobs && (!existing || existing.clusterJobs.length === 0) && expandedRunIdsRef.current.has(runName)) {
         fetchRunDetails(runName, updatedState);
       }
     } else if (message.event === 'deleted') {
@@ -174,6 +172,29 @@ export function useScenarioRunsPoller() {
     }
   }, [connectionState, fetchInitialScenarioRuns]);
 
+  // Periodically re-fetch details for expanded runs that are still active.
+  // Keeps clusterJob phases up-to-date until the per-run detail WebSocket is implemented.
+  useEffect(() => {
+    if (connectionState !== 'connected') return;
+
+    const intervalId = setInterval(() => {
+      const expandedIds = state.expandedRunIds;
+      const runs = scenarioRunsRef.current;
+
+      for (const runName of expandedIds) {
+        const run = runs.find(r => r.scenarioRunName === runName);
+        if (!run) continue;
+        if (['Succeeded', 'Failed', 'PartiallyFailed'].includes(run.phase)) continue;
+
+        fetchedDetailsRef.current.delete(runName);
+        fetchRunDetails(runName, run);
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [connectionState, state.expandedRunIds, fetchRunDetails]);
+
+  return { fetchRunDetails };
 }
 
 /**

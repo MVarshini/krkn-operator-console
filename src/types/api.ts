@@ -443,6 +443,7 @@ export interface AppState {
   pollingRunNames: Set<string>;
   expandedRunIds: Set<string>;
   expandedClusterJobs: Set<string>; // jobId
+  loadingRunDetails: Set<string>;
 
   // Graph runs list (GraphRun orchestration)
   graphRuns: GraphRunState[];
@@ -502,6 +503,7 @@ export type AppAction =
   | { type: 'LOAD_SCENARIO_RUNS_SUCCESS'; payload: { runs: ScenarioRunState[] } }
   | { type: 'TOGGLE_RUN_ACCORDION'; payload: { scenarioRunName: string } }
   | { type: 'TOGGLE_CLUSTER_JOB_ACCORDION'; payload: { jobId: string } }
+  | { type: 'SET_RUN_DETAILS_LOADING'; payload: { scenarioRunName: string; loading: boolean } }
 
   // Graph runs list management
   | { type: 'GRAPH_RUN_CREATED'; payload: { graphRunName: string; totalNodes: number } }
@@ -865,6 +867,7 @@ export interface GraphRunListItem {
   // Resiliency score fields
   resiliencyScoreEnabled?: boolean;
   resiliencyScoreBaseline?: number;
+  resiliencyScore?: ResiliencyScoreResponse;
   resiliencyScores?: GraphClusterScore[];
 }
 
@@ -943,6 +946,8 @@ export interface GraphRunState {
   resiliencyScoreEnabled?: boolean;
   resiliencyScoreBaseline?: number;
   resiliencyScores?: GraphClusterScore[];
+  /** Aggregated resiliency score (computed from resiliencyScores) */
+  resiliencyScore?: ResiliencyScoreResponse;
 }
 
 /**
