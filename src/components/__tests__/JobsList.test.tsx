@@ -269,4 +269,46 @@ describe('JobsList', () => {
       expect(screen.getByText('cpu-hog')).toBeInTheDocument();
     });
   });
+
+  describe('Loading Run Details', () => {
+    it('should show spinner when run details are loading', () => {
+      const props = defaultProps();
+      props.scenarioRuns = [{
+        scenarioRunName: 'loading-run',
+        scenarioName: 'cpu-hog',
+        phase: 'Running' as const,
+        totalTargets: 1,
+        successfulJobs: 0,
+        failedJobs: 0,
+        runningJobs: 1,
+        clusterJobs: [],
+        createdAt: '2026-07-01T08:00:00Z',
+        ownerUserId: 'user@test.com',
+      }];
+      props.expandedRunIds = new Set(['loading-run']);
+      props.loadingRunDetails = new Set(['loading-run']);
+      render(<JobsList {...props} />);
+      expect(screen.getByLabelText('Loading run details')).toBeInTheDocument();
+    });
+
+    it('should show "No jobs available" when not loading and no jobs', () => {
+      const props = defaultProps();
+      props.scenarioRuns = [{
+        scenarioRunName: 'empty-run',
+        scenarioName: 'cpu-hog',
+        phase: 'Running' as const,
+        totalTargets: 1,
+        successfulJobs: 0,
+        failedJobs: 0,
+        runningJobs: 1,
+        clusterJobs: [],
+        createdAt: '2026-07-01T08:00:00Z',
+        ownerUserId: 'user@test.com',
+      }];
+      props.expandedRunIds = new Set(['empty-run']);
+      props.loadingRunDetails = new Set();
+      render(<JobsList {...props} />);
+      expect(screen.getByText('No jobs available for this scenario run')).toBeInTheDocument();
+    });
+  });
 });

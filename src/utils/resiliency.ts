@@ -1,4 +1,5 @@
 import type { ClusterResiliencyScore, GraphClusterScore } from '../types/api';
+import type { ResiliencyScoreResponse } from '../types/api';
 
 /**
  * 5-level color gradient based on score/baseline ratio.
@@ -44,4 +45,29 @@ export function allClustersPassed(scores: GraphClusterScore[]): boolean {
 export function calculateNodeScoreAverage(scores: ClusterResiliencyScore[]): number {
   if (!scores || scores.length === 0) return 0;
   return scores.reduce((sum, cs) => sum + cs.score, 0) / scores.length;
+}
+
+export function aggregateResiliencyScores(
+  scores: GraphClusterScore[],
+  explicitBaseline?: number,
+): ResiliencyScoreResponse {
+  const avg = scores.reduce((sum, s) => sum + s.calculated, 0) / scores.length;
+  const baseline = explicitBaseline ?? scores[0]?.baseline;
+  const hasFail = scores.some(s => s.status === 'fail');
+  const hasNoBaseline =
+    baseline == null ||
+    baseline <= 0 ||
+    scores.some(s => s.status === 'no-baseline');
+
+  let status: ResiliencyScoreResponse['status'];
+  if (hasFail) status = 'fail';
+  else if (hasNoBaseline) status = 'no-baseline';
+  else status = 'pass';
+
+  return {
+    calculated: avg,
+    baseline,
+    status,
+    message: scores.map(s => `${s.clusterName}: ${s.calculated}`).join(', '),
+  };
 }

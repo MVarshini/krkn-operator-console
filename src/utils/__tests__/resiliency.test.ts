@@ -7,6 +7,7 @@ import {
   calculateNodeScoreAverage,
   isScoreCalculating,
   SCORE_CALCULATING,
+  aggregateResiliencyScores,
 } from '../resiliency';
 import type { ClusterResiliencyScore, GraphClusterScore } from '../../types/api';
 
@@ -176,5 +177,105 @@ describe('isScoreCalculating', () => {
 
   it('returns false for empty array', () => {
     expect(isScoreCalculating([])).toBe(false);
+  });
+});
+
+describe('aggregateResiliencyScores', () => {
+  it('returns pass when all clusters pass', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, baseline: 80, status: 'pass' },
+      { clusterName: 'b', calculated: 80, baseline: 80, status: 'pass' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.status).toBe('pass');
+    expect(result.calculated).toBe(85);
+    expect(result.baseline).toBe(80);
+  });
+
+  it('returns fail when any cluster fails', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, baseline: 80, status: 'pass' },
+      { clusterName: 'b', calculated: 50, baseline: 80, status: 'fail' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.status).toBe('fail');
+  });
+
+  it('returns no-baseline when any cluster has no-baseline status', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, baseline: 80, status: 'pass' },
+      { clusterName: 'b', calculated: 85, status: 'no-baseline' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.status).toBe('no-baseline');
+  });
+
+  it('returns no-baseline when baseline is missing from all clusters', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, status: 'pass' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.status).toBe('no-baseline');
+  });
+
+  it('returns no-baseline when baseline is zero', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, baseline: 0, status: 'pass' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.status).toBe('no-baseline');
+  });
+
+  it('returns no-baseline when baseline is negative', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, baseline: -5, status: 'pass' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.status).toBe('no-baseline');
+  });
+
+  it('fail takes precedence over no-baseline', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 50, baseline: 80, status: 'fail' },
+      { clusterName: 'b', calculated: 85, status: 'no-baseline' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.status).toBe('fail');
+  });
+
+  it('uses explicitBaseline over per-cluster baseline', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, baseline: 80, status: 'pass' },
+    ];
+    const result = aggregateResiliencyScores(scores, 70);
+    expect(result.baseline).toBe(70);
+  });
+
+  it('falls back to first cluster baseline when no explicit baseline', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 90, baseline: 75, status: 'pass' },
+      { clusterName: 'b', calculated: 80, baseline: 80, status: 'pass' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.baseline).toBe(75);
+  });
+
+  it('builds a per-cluster message', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'cluster-1', calculated: 90, baseline: 80, status: 'pass' },
+      { clusterName: 'cluster-2', calculated: 70, baseline: 80, status: 'fail' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.message).toBe('cluster-1: 90, cluster-2: 70');
+  });
+
+  it('computes correct average across clusters', () => {
+    const scores: GraphClusterScore[] = [
+      { clusterName: 'a', calculated: 100, baseline: 80, status: 'pass' },
+      { clusterName: 'b', calculated: 80, baseline: 80, status: 'pass' },
+      { clusterName: 'c', calculated: 60, baseline: 80, status: 'fail' },
+    ];
+    const result = aggregateResiliencyScores(scores);
+    expect(result.calculated).toBe(80);
   });
 });

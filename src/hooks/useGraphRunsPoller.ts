@@ -4,18 +4,8 @@ import { graphRunsApi } from '../services';
 import { useWebSocket } from './useWebSocket';
 import { websocketService } from '../services/websocketService';
 import type { ServerMessage } from '../types/websocket';
-import type { GraphRunState, GraphClusterScore, ResiliencyScoreResponse } from '../types/api';
-
-function aggregateResiliencyScores(scores: GraphClusterScore[]): ResiliencyScoreResponse {
-  const avg = scores.reduce((sum, s) => sum + s.calculated, 0) / scores.length;
-  const hasFail = scores.some(s => s.status === 'fail');
-  return {
-    calculated: avg,
-    baseline: scores[0]?.baseline,
-    status: hasFail ? 'fail' : 'pass',
-    message: scores.map(s => `${s.clusterName}: ${s.calculated}`).join(', '),
-  };
-}
+import type { GraphRunState } from '../types/api';
+import { aggregateResiliencyScores } from '../utils/resiliency';
 
 /**
  * Hook to receive real-time graph run updates via WebSocket.
@@ -39,7 +29,7 @@ export function useGraphRunsPoller() {
       const graphRuns = await graphRunsApi.listGraphRuns();
       const graphRunStates: GraphRunState[] = graphRuns.map((run) => {
         const resiliencyScore = run.resiliencyScores?.length
-          ? aggregateResiliencyScores(run.resiliencyScores)
+          ? aggregateResiliencyScores(run.resiliencyScores, run.resiliencyScoreBaseline)
           : run.resiliencyScore;
 
         return {
@@ -91,6 +81,14 @@ export function useGraphRunsPoller() {
         resiliencyScoreBaseline: data.resiliencyScoreBaseline ?? existing?.resiliencyScoreBaseline ?? data.resiliencyScores?.[0]?.baseline,
         resiliencyScores: data.resiliencyScores ?? existing?.resiliencyScores,
       };
+
+      const scores = updatedState.resiliencyScores;
+      if (scores?.length) {
+        updatedState.resiliencyScore = data.resiliencyScore
+          ?? aggregateResiliencyScores(scores, updatedState.resiliencyScoreBaseline);
+      } else {
+        updatedState.resiliencyScore = data.resiliencyScore ?? existing?.resiliencyScore;
+      }
 
       if (existing) {
         dispatch({ type: 'UPDATE_GRAPH_RUN', payload: { run: updatedState } });

@@ -24,9 +24,13 @@ export function useScenarioRunsPoller() {
   const initialFetchDoneRef = useRef(false);
   const fetchedDetailsRef = useRef<Set<string>>(new Set());
   const terminalFetchDoneRef = useRef<Set<string>>(new Set());
+  const inFlightRef = useRef<Set<string>>(new Set());
 
   const fetchRunDetails = useCallback(async (runName: string, base: ScenarioRunState) => {
+    if (inFlightRef.current.has(runName)) return;
     if (fetchedDetailsRef.current.has(runName)) return;
+
+    inFlightRef.current.add(runName);
     fetchedDetailsRef.current.add(runName);
 
     dispatch({ type: 'SET_RUN_DETAILS_LOADING', payload: { scenarioRunName: runName, loading: true } });
@@ -62,6 +66,7 @@ export function useScenarioRunsPoller() {
     } catch {
       fetchedDetailsRef.current.delete(runName);
     } finally {
+      inFlightRef.current.delete(runName);
       dispatch({ type: 'SET_RUN_DETAILS_LOADING', payload: { scenarioRunName: runName, loading: false } });
     }
   }, [dispatch]);
@@ -185,6 +190,7 @@ export function useScenarioRunsPoller() {
         const run = runs.find(r => r.scenarioRunName === runName);
         if (!run) continue;
         if (['Succeeded', 'Failed', 'PartiallyFailed'].includes(run.phase)) continue;
+        if (inFlightRef.current.has(runName)) continue;
 
         fetchedDetailsRef.current.delete(runName);
         fetchRunDetails(runName, run);
