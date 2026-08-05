@@ -1,4 +1,4 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { AppProvider, useAppContext } from '../AppContext';
 import type { GraphRunState, AppAction } from '../../types/api';
