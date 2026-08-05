@@ -1044,12 +1044,20 @@ describe('StudioContext', () => {
   // =========================================================================
   describe('useStudioContext outside provider', () => {
     it('throws when used without StudioProvider', () => {
-      // Suppress console.error from React for this expected error
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      expect(() => {
-        renderHook(() => useStudioContext());
-      }).toThrow('useStudioContext must be used within a StudioProvider');
+      const { result } = renderHook(() => {
+        try {
+          return { value: useStudioContext(), error: null };
+        } catch (e) {
+          return { value: null, error: e as Error };
+        }
+      });
+
+      expect(result.current.error).toBeInstanceOf(Error);
+      expect(result.current.error?.message).toBe(
+        'useStudioContext must be used within a StudioProvider',
+      );
 
       spy.mockRestore();
     });
