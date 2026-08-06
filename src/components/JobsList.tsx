@@ -38,7 +38,6 @@ import {
   TextInput,
   Pagination,
   PaginationVariant,
-  Spinner,
 } from '@patternfly/react-core';
 import {
   HourglassHalfIcon,
