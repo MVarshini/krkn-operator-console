@@ -96,6 +96,7 @@ const defaultProps = () => ({
   onToggleGraphRunAccordion: vi.fn(),
   onDeleteGraphRun: vi.fn().mockResolvedValue(undefined),
   onRerunScenario: vi.fn(),
+  loadingRunDetails: new Set<string>(),
 });
 
 describe('JobsList', () => {
@@ -266,6 +267,50 @@ describe('JobsList', () => {
       render(<JobsList {...defaultProps()} />);
       expect(screen.getByText('test-graph-run')).toBeInTheDocument();
       expect(screen.getByText('cpu-hog')).toBeInTheDocument();
+    });
+  });
+
+  describe('Loading Run Details', () => {
+    it('should show spinner when run details are loading', () => {
+      setMockJobs([makeScenarioJobItem('loading-run', {
+        scenarioRun: {
+          scenarioRunName: 'loading-run',
+          scenarioName: 'cpu-hog',
+          phase: 'Running',
+          totalTargets: 1,
+          successfulJobs: 0,
+          failedJobs: 0,
+          runningJobs: 1,
+          clusterJobs: [],
+          ownerUserId: 'user@test.com',
+        },
+      })]);
+      const props = defaultProps();
+      props.expandedRunIds = new Set(['loading-run']);
+      props.loadingRunDetails = new Set(['loading-run']);
+      render(<JobsList {...props} />);
+      expect(screen.getByLabelText('Loading run details')).toBeInTheDocument();
+    });
+
+    it('should show "No jobs available" when not loading and no jobs', () => {
+      setMockJobs([makeScenarioJobItem('empty-run', {
+        scenarioRun: {
+          scenarioRunName: 'empty-run',
+          scenarioName: 'cpu-hog',
+          phase: 'Running',
+          totalTargets: 1,
+          successfulJobs: 0,
+          failedJobs: 0,
+          runningJobs: 1,
+          clusterJobs: [],
+          ownerUserId: 'user@test.com',
+        },
+      })]);
+      const props = defaultProps();
+      props.expandedRunIds = new Set(['empty-run']);
+      props.loadingRunDetails = new Set();
+      render(<JobsList {...props} />);
+      expect(screen.getByText('No jobs available for this scenario run')).toBeInTheDocument();
     });
   });
 });

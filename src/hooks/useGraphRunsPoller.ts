@@ -5,6 +5,7 @@ import { useWebSocket } from './useWebSocket';
 import { websocketService } from '../services/websocketService';
 import type { ServerMessage } from '../types/websocket';
 import type { GraphRunState } from '../types/api';
+import { aggregateResiliencyScores } from '../utils/resiliency';
 
 /**
  * Hook to receive real-time graph run updates via WebSocket.
@@ -26,20 +27,27 @@ export function useGraphRunsPoller() {
 
     try {
       const graphRuns = await graphRunsApi.listGraphRuns();
-      const graphRunStates: GraphRunState[] = graphRuns.map((run) => ({
-        name: run.name,
-        namespace: run.namespace,
-        creationTimestamp: run.creationTimestamp,
-        phase: run.phase,
-        ownerUserId: run.ownerUserId,
-        targetRequestId: run.targetRequestId,
-        summary: run.summary,
-        startTime: run.startTime,
-        completionTime: run.completionTime,
-        resiliencyScoreEnabled: run.resiliencyScoreEnabled,
-        resiliencyScoreBaseline: run.resiliencyScoreBaseline,
-        resiliencyScores: run.resiliencyScores,
-      }));
+      const graphRunStates: GraphRunState[] = graphRuns.map((run) => {
+        const resiliencyScore = run.resiliencyScores?.length
+          ? aggregateResiliencyScores(run.resiliencyScores, run.resiliencyScoreBaseline)
+          : run.resiliencyScore;
+
+        return {
+          name: run.name,
+          namespace: run.namespace,
+          creationTimestamp: run.creationTimestamp,
+          phase: run.phase,
+          ownerUserId: run.ownerUserId,
+          targetRequestId: run.targetRequestId,
+          summary: run.summary,
+          startTime: run.startTime,
+          completionTime: run.completionTime,
+          resiliencyScoreEnabled: run.resiliencyScoreEnabled,
+          resiliencyScoreBaseline: run.resiliencyScoreBaseline,
+          resiliencyScores: run.resiliencyScores,
+          resiliencyScore,
+        };
+      });
 
       dispatch({
         type: 'LOAD_GRAPH_RUNS_SUCCESS',
@@ -66,13 +74,21 @@ export function useGraphRunsPoller() {
         phase: data.phase,
         ownerUserId: data.ownerUserId || existing?.ownerUserId || '',
         targetRequestId: data.targetRequestId || existing?.targetRequestId || '',
-        summary: data.summary || existing?.summary,
+        summary: data.summary || existing?.summary || { totalNodes: 0, completedNodes: 0, runningNodes: 0, failedNodes: 0, pendingNodes: 0 },
         startTime: data.startTime || existing?.startTime,
         completionTime: data.completionTime || existing?.completionTime,
         resiliencyScoreEnabled: data.resiliencyScoreEnabled ?? existing?.resiliencyScoreEnabled,
         resiliencyScoreBaseline: data.resiliencyScoreBaseline ?? existing?.resiliencyScoreBaseline ?? data.resiliencyScores?.[0]?.baseline,
         resiliencyScores: data.resiliencyScores ?? existing?.resiliencyScores,
       };
+
+      const scores = updatedState.resiliencyScores;
+      if (scores?.length) {
+        updatedState.resiliencyScore = data.resiliencyScore
+          ?? aggregateResiliencyScores(scores, updatedState.resiliencyScoreBaseline);
+      } else {
+        updatedState.resiliencyScore = data.resiliencyScore ?? existing?.resiliencyScore;
+      }
 
       if (existing) {
         dispatch({ type: 'UPDATE_GRAPH_RUN', payload: { run: updatedState } });
