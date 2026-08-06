@@ -68,8 +68,8 @@ function makeGraphRunState(overrides: Partial<GraphRunState> = {}): GraphRunStat
   };
 }
 
-function sendWsMessage(msg: ServerMessage) {
-  const { act } = require('@testing-library/react');
+async function sendWsMessage(msg: ServerMessage) {
+  const { act } = await import('@testing-library/react');
   act(() => { capturedHandler?.(msg); });
 }
 
@@ -155,11 +155,11 @@ describe('useGraphRunsPoller', () => {
       vi.mocked(graphRunsApi.listGraphRuns).mockResolvedValue([]);
     });
 
-    it('computes resiliencyScore from scores on WS update when data.resiliencyScore is absent', () => {
+    it('computes resiliencyScore from scores on WS update when data.resiliencyScore is absent', async () => {
       mockGraphRuns = [makeGraphRunState({ name: 'graphrun-001' })];
       renderHook(() => useGraphRunsPoller());
 
-      sendWsMessage({
+      await sendWsMessage({
         resource: 'graphrun',
         id: 'graphrun-001',
         event: 'updated',
@@ -190,13 +190,13 @@ describe('useGraphRunsPoller', () => {
       );
     });
 
-    it('prefers data.resiliencyScore over aggregation on WS update', () => {
+    it('prefers data.resiliencyScore over aggregation on WS update', async () => {
       mockGraphRuns = [makeGraphRunState({ name: 'graphrun-001' })];
       renderHook(() => useGraphRunsPoller());
 
       const explicitScore = { calculated: 99, baseline: 80, status: 'pass' as const, message: 'explicit' };
 
-      sendWsMessage({
+      await sendWsMessage({
         resource: 'graphrun',
         id: 'graphrun-001',
         event: 'updated',
@@ -222,12 +222,12 @@ describe('useGraphRunsPoller', () => {
       );
     });
 
-    it('falls back to existing resiliencyScore when WS has neither scores nor resiliencyScore', () => {
+    it('falls back to existing resiliencyScore when WS has neither scores nor resiliencyScore', async () => {
       const existingScore = { calculated: 85, baseline: 80, status: 'pass' as const, message: 'existing' };
       mockGraphRuns = [makeGraphRunState({ name: 'graphrun-001', resiliencyScore: existingScore })];
       renderHook(() => useGraphRunsPoller());
 
-      sendWsMessage({
+      await sendWsMessage({
         resource: 'graphrun',
         id: 'graphrun-001',
         event: 'updated',
@@ -248,11 +248,11 @@ describe('useGraphRunsPoller', () => {
       );
     });
 
-    it('provides default summary when WS created event has no summary and no existing run', () => {
+    it('provides default summary when WS created event has no summary and no existing run', async () => {
       mockGraphRuns = [];
       renderHook(() => useGraphRunsPoller());
 
-      sendWsMessage({
+      await sendWsMessage({
         resource: 'graphrun',
         id: 'graphrun-new',
         event: 'created',
@@ -277,11 +277,11 @@ describe('useGraphRunsPoller', () => {
       );
     });
 
-    it('dispatches DELETE_GRAPH_RUN on deleted event', () => {
+    it('dispatches DELETE_GRAPH_RUN on deleted event', async () => {
       mockGraphRuns = [makeGraphRunState({ name: 'graphrun-001' })];
       renderHook(() => useGraphRunsPoller());
 
-      sendWsMessage({
+      await sendWsMessage({
         resource: 'graphrun',
         id: 'graphrun-001',
         event: 'deleted',
