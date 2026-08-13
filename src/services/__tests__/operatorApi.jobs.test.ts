@@ -38,6 +38,7 @@ describe('OperatorApi - listUnifiedJobs', () => {
       },
     ],
     pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+    stats: { totalJobs: 2, succeededJobs: 0, failedJobs: 0 },
   };
 
   it('should fetch jobs with pagination params', async () => {

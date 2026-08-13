@@ -612,7 +612,7 @@ class OperatorApiClient extends BaseApiClient {
       const response = await authenticatedFetch(url);
       if (!response.ok) {
         if (response.status === 404) {
-          return { jobs: [], pagination: { page: 0, limit: 0, total: 0, totalPages: 0 } };
+          return { jobs: [], pagination: { page: 0, limit: 0, total: 0, totalPages: 0 }, stats: { totalJobs: 0, succeededJobs: 0, failedJobs: 0 } };
         }
         let message = `HTTP ${response.status}: ${response.statusText}`;
         try {
@@ -624,7 +624,7 @@ class OperatorApiClient extends BaseApiClient {
       return response.json();
     } catch (error) {
       if (error instanceof Error && error.message.includes('404')) {
-        return { jobs: [], pagination: { page: 0, limit: 0, total: 0, totalPages: 0 } };
+        return { jobs: [], pagination: { page: 0, limit: 0, total: 0, totalPages: 0 }, stats: { totalJobs: 0, succeededJobs: 0, failedJobs: 0 } };
       }
       throw error;
     }

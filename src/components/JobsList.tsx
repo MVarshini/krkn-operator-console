@@ -180,7 +180,7 @@ export function JobsList({
 }: JobsListProps) {
   const { isAdmin } = useRole();
   const { activeRuns, loading: activeRunsLoading, error: activeRunsError } = useActiveRunsPoller();
-  const { jobs, pagination, page, setPage, limit, setLimit, isLoading } = useJobs();
+  const { jobs, pagination, stats, hasReceivedStats, page, setPage, limit, setLimit, isLoading } = useJobs();
   const [deletingRun, setDeletingRun] = useState<string | null>(null);
   const [deletingJob, setDeletingJob] = useState<string | null>(null);
   const [confirmDeleteRun, setConfirmDeleteRun] = useState<string | null>(null);
@@ -698,7 +698,7 @@ export function JobsList({
           </EmptyState>
         ) : (
           <>
-          <JobStatsSummary unifiedRuns={unifiedRuns} />
+          {hasReceivedStats && <JobStatsSummary stats={stats} />}
           <DataList aria-label="Scenario runs list" isCompact>
             {filteredUnifiedRuns.map((item) => {
               // Handle GraphRun

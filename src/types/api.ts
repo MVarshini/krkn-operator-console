@@ -971,10 +971,18 @@ export interface UnifiedJobItem {
   graphRun?: GraphRunListItem;
 }
 
+/** Aggregate job statistics computed across all runs (not just the current page). */
+export interface JobStatsSummary {
+  totalJobs: number;
+  succeededJobs: number;
+  failedJobs: number;
+}
+
 /** Response from GET /api/v2/jobs */
 export interface UnifiedJobsResponse {
   jobs: UnifiedJobItem[];
   pagination: import('./websocket').PaginationMeta;
+  stats: JobStatsSummary;
 }
 
 // Chaos Scenario Studio Types
