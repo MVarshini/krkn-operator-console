@@ -13,6 +13,7 @@ interface UseJobsReturn {
   jobs: UnifiedJobItem[];
   pagination: PaginationMeta;
   stats: JobStatsSummary;
+  hasReceivedStats: boolean;
   page: number;
   setPage: (page: number) => void;
   limit: number;
@@ -34,6 +35,7 @@ export function useJobs(): UseJobsReturn {
   const [page, setPage] = useState(DEFAULT_PAGE);
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasReceivedStats, setHasReceivedStats] = useState(false);
 
   const lastSubscribedRef = useRef<string | null>(null);
 
@@ -50,6 +52,7 @@ export function useJobs(): UseJobsReturn {
         }
         if (message.stats) {
           setStats(message.stats);
+          setHasReceivedStats(true);
         }
       }
     }
@@ -72,5 +75,5 @@ export function useJobs(): UseJobsReturn {
     websocketService.subscribe('jobs', 'jobs', undefined, page, limit);
   }, [connectionState, page, limit]);
 
-  return { jobs, pagination, stats, page, setPage, limit, setLimit, isLoading };
+  return { jobs, pagination, stats, hasReceivedStats, page, setPage, limit, setLimit, isLoading };
 }
