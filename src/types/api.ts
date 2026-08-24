@@ -400,6 +400,7 @@ export type AppPhase =
   | 'jobs_list' // Landing page
   | 'settings' // Settings page
   | 'studio' // Chaos Scenario Studio page
+  | 'terminal' // Full-screen cluster terminal page
   | 'selecting_clusters' // Multi-cluster selection
   | 'configuring_registry'
   | 'loading_scenarios'
@@ -553,6 +554,7 @@ export type AppAction =
   | { type: 'RETRY' }
   | { type: 'NAVIGATE_TO_SETTINGS' }
   | { type: 'NAVIGATE_TO_STUDIO' }
+  | { type: 'NAVIGATE_TO_TERMINAL' }
 
   // Notifications
   | { type: 'SHOW_NOTIFICATION'; payload: { notification: Notification } }
