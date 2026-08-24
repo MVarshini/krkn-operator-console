@@ -51,7 +51,6 @@ import { LogViewer } from './LogViewer';
 import { ActiveRunsSummary } from './ActiveRunsSummary';
 import { GraphRunDetail } from './GraphRunDetail';
 import { JobStatsSummary } from './JobStatsSummary';
-import { FileManagementModal } from './FileManagement';
 import { useRole } from '../hooks/useRole';
 import { useActiveRunsPoller } from '../hooks/useActiveRunsPoller';
 import { useJobs } from '../hooks/useJobs';
@@ -183,7 +182,6 @@ export function JobsList({
   const [timeRangeError, setTimeRangeError] = useState('');
   const [customRunNameFilter, setCustomRunNameFilter] = useState<string>('');
   const [isOwnerSelectOpen, setIsOwnerSelectOpen] = useState(false);
-  const [isFileManagementOpen, setIsFileManagementOpen] = useState(false);
 
   // Format timestamp for display
   const formatTimestamp = (dateString?: string): string => {
@@ -1277,11 +1275,6 @@ export function JobsList({
         Are you sure you want to delete job <strong>{confirmDeleteJob?.jobName}</strong>?
       </Modal>
 
-      {/* File Management Modal */}
-      <FileManagementModal
-        isOpen={isFileManagementOpen}
-        onClose={() => setIsFileManagementOpen(false)}
-      />
     </Card>
   );
 }

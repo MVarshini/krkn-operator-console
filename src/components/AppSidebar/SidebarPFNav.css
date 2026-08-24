@@ -69,9 +69,17 @@
   background-color: #26292d;
 }
 
-/* Collapsed: hide labels + the expandable account section, center the icons. */
+/* Collapsed: visually hide labels but keep them in the accessibility tree. */
 .pf-sidebar--collapsed .pf-sidebar__label {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 .pf-sidebar--collapsed .pf-v5-c-nav__link {

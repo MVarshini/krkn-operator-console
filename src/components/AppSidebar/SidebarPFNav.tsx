@@ -9,8 +9,29 @@ import './SidebarPFNav.css';
 /**
  * SidebarPFNav — sidebar variant built with PatternFly's native Nav.
  *
- * No extra dependency; inherits PatternFly theming/dark-mode. When collapsed,
- * CSS hides the labels leaving an icon rail; expanding reveals the labels.
+ * The menu chrome for the sidebar. Uses PatternFly's native Nav component
+ * (no extra dependency) and inherits PatternFly theming/dark-mode. When collapsed,
+ * labels are visually hidden but remain in the accessibility tree via aria-label
+ * on each nav item. Expanding reveals the labels.
+ *
+ * This component is typically wrapped by AppSidebar for collapse/expand behaviour.
+ * Direct usage is rare; prefer AppSidebar in most cases.
+ *
+ * @param activePhase - The current app phase; highlights the matching nav item
+ * @param expanded - When true, labels are visible; when false, collapsed to icon rail
+ * @param isAdmin - When true, renders the Settings menu item
+ * @param userName - Display name shown in the Account expandable section
+ * @param isDarkTheme - Current theme; controls the theme toggle label and icon
+ * @param onNavigateJobs - Called when Jobs menu item is clicked
+ * @param onRunScenario - Called when Run Scenario menu item is clicked
+ * @param onNavigateStudio - Called when Chaos Studio menu item is clicked
+ * @param onOpenFiles - Called when Files menu item is clicked
+ * @param onNavigateTerminal - Called when Terminal menu item is clicked
+ * @param onNavigateSettings - Called when Settings menu item is clicked
+ * @param onEditProfile - Called when Edit Profile menu item is clicked
+ * @param onChangePassword - Called when Change Password menu item is clicked
+ * @param onToggleTheme - Called when theme toggle is clicked
+ * @param onLogout - Called when Logout menu item is clicked
  */
 export function SidebarPFNav({
   activePhase,
@@ -40,19 +61,19 @@ export function SidebarPFNav({
     <div className={`pf-sidebar ${expanded ? 'pf-sidebar--expanded' : 'pf-sidebar--collapsed'}`}>
       <Nav aria-label="Primary navigation">
         <NavList>
-          <NavItem isActive={activePhase === 'jobs_list'} onClick={onNavigateJobs}>
+          <NavItem isActive={activePhase === 'jobs_list'} onClick={onNavigateJobs} aria-label="Jobs">
             {item(<MdWork />, 'Jobs')}
           </NavItem>
-          <NavItem onClick={onRunScenario}>{item(<PlayIcon />, 'Run Scenario')}</NavItem>
-          <NavItem isActive={activePhase === 'studio'} onClick={onNavigateStudio}>
+          <NavItem onClick={onRunScenario} aria-label="Run Scenario">{item(<PlayIcon />, 'Run Scenario')}</NavItem>
+          <NavItem isActive={activePhase === 'studio'} onClick={onNavigateStudio} aria-label="Chaos Studio">
             {item(<PiFlaskFill />, 'Chaos Studio')}
           </NavItem>
-          <NavItem onClick={onOpenFiles}>{item(<FolderIcon />, 'Files')}</NavItem>
-          <NavItem isActive={activePhase === 'terminal'} onClick={onNavigateTerminal}>
+          <NavItem onClick={onOpenFiles} aria-label="Files">{item(<FolderIcon />, 'Files')}</NavItem>
+          <NavItem isActive={activePhase === 'terminal'} onClick={onNavigateTerminal} aria-label="Terminal">
             {item(<TerminalIcon />, 'Terminal')}
           </NavItem>
           {isAdmin && (
-            <NavItem isActive={activePhase === 'settings'} onClick={onNavigateSettings}>
+            <NavItem isActive={activePhase === 'settings'} onClick={onNavigateSettings} aria-label="Settings">
               {item(<CogIcon />, 'Settings')}
             </NavItem>
           )}
@@ -64,12 +85,12 @@ export function SidebarPFNav({
       <Nav aria-label="Account">
         <NavList>
           <NavExpandable title={userName || 'Account'} srText="Account menu">
-            <NavItem onClick={onEditProfile}>{item(<EditIcon />, 'Edit Profile')}</NavItem>
-            <NavItem onClick={onChangePassword}>{item(<KeyIcon />, 'Change Password')}</NavItem>
-            <NavItem onClick={onToggleTheme}>
+            <NavItem onClick={onEditProfile} aria-label="Edit Profile">{item(<EditIcon />, 'Edit Profile')}</NavItem>
+            <NavItem onClick={onChangePassword} aria-label="Change Password">{item(<KeyIcon />, 'Change Password')}</NavItem>
+            <NavItem onClick={onToggleTheme} aria-label={isDarkTheme ? 'Light Theme' : 'Dark Theme'}>
               {item(isDarkTheme ? <SunIcon /> : <MoonIcon />, isDarkTheme ? 'Light Theme' : 'Dark Theme')}
             </NavItem>
-            <NavItem onClick={onLogout}>{item(<PowerOffIcon />, 'Logout')}</NavItem>
+            <NavItem onClick={onLogout} aria-label="Logout">{item(<PowerOffIcon />, 'Logout')}</NavItem>
           </NavExpandable>
         </NavList>
       </Nav>
