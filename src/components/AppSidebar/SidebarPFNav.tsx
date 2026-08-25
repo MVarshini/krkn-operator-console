@@ -32,6 +32,26 @@ import './SidebarPFNav.css';
  * @param onChangePassword - Called when Change Password menu item is clicked
  * @param onToggleTheme - Called when theme toggle is clicked
  * @param onLogout - Called when Logout menu item is clicked
+ *
+ * @example
+ * // Direct usage (rare; typically wrapped by AppSidebar)
+ * <SidebarPFNav
+ *   activePhase="jobs_list"
+ *   expanded={true}
+ *   isAdmin={true}
+ *   userName="Alice Smith"
+ *   isDarkTheme={false}
+ *   onNavigateJobs={() => console.log('jobs')}
+ *   onRunScenario={() => console.log('run')}
+ *   onNavigateStudio={() => console.log('studio')}
+ *   onOpenFiles={() => console.log('files')}
+ *   onNavigateTerminal={() => console.log('terminal')}
+ *   onNavigateSettings={() => console.log('settings')}
+ *   onEditProfile={() => console.log('edit')}
+ *   onChangePassword={() => console.log('password')}
+ *   onToggleTheme={() => console.log('theme')}
+ *   onLogout={() => console.log('logout')}
+ * />
  */
 export function SidebarPFNav({
   activePhase,
