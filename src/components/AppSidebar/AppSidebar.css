@@ -10,8 +10,8 @@
 :root {
   --app-sidebar-rail-width: 64px;
   --app-sidebar-expanded-width: 200px;
-  /* Sit flush under the masthead using its actual height (no guessed gap). */
-  --app-sidebar-top: var(--pf-v5-c-masthead--Height, var(--pf-v5-c-page__header--MinHeight, 4.75rem));
+  /* Sit flush under the masthead at 64px (PatternFly v5 standard height) */
+  --app-sidebar-top: 64px;
 }
 
 .app-sidebar {
@@ -23,6 +23,8 @@
   width: var(--app-sidebar-rail-width);
   transition: width 0.15s ease-in-out;
   overflow: visible;
+  /* Ensure sidebar stays above content and never goes behind masthead */
+  height: calc(100vh - var(--app-sidebar-top));
 }
 
 .app-sidebar--expanded {

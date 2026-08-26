@@ -401,6 +401,7 @@ export type AppPhase =
   | 'settings' // Settings page
   | 'studio' // Chaos Scenario Studio page
   | 'terminal' // Full-screen cluster terminal page
+  | 'files' // File management page
   | 'selecting_clusters' // Multi-cluster selection
   | 'configuring_registry'
   | 'loading_scenarios'
@@ -555,6 +556,7 @@ export type AppAction =
   | { type: 'NAVIGATE_TO_SETTINGS' }
   | { type: 'NAVIGATE_TO_STUDIO' }
   | { type: 'NAVIGATE_TO_TERMINAL' }
+  | { type: 'NAVIGATE_TO_FILES' }
 
   // Notifications
   | { type: 'SHOW_NOTIFICATION'; payload: { notification: Notification } }

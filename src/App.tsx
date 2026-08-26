@@ -28,7 +28,6 @@ function App() {
   const { showSuccess, showError } = useNotifications();
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [isFileManagementOpen, setIsFileManagementOpen] = useState(false);
   const [isSidebarPinned, setIsSidebarPinned] = useState(false);
   const { isAdmin } = useRole();
   const [isDarkTheme, setIsDarkTheme] = useState(() => {
@@ -250,6 +249,18 @@ function App() {
           </PageSection>
         );
 
+      case 'files':
+        return (
+          <PageSection isFilled padding={{ default: 'noPadding' }} style={{ height: '100%' }}>
+            <div style={{ padding: '1rem' }}>
+              <FileManagementModal
+                isOpen={true}
+                onClose={handleNavigateToHome}
+              />
+            </div>
+          </PageSection>
+        );
+
       case 'studio':
         return (
           <PageSection>
@@ -334,6 +345,12 @@ function App() {
     proceed();
   };
 
+  const handleNavigateToFiles = () => {
+    const proceed = () => dispatch({ type: 'NAVIGATE_TO_FILES' });
+    if (!checkStudioGuard(proceed)) return;
+    proceed();
+  };
+
   const handleNavigateToHome = () => {
     const proceed = () => dispatch({ type: 'JOBS_LIST_READY' });
     if (!checkStudioGuard(proceed)) return;
@@ -393,7 +410,7 @@ function App() {
       onNavigateJobs={handleNavigateToHome}
       onRunScenario={handleCreateJob}
       onNavigateStudio={handleNavigateToStudio}
-      onOpenFiles={() => setIsFileManagementOpen(true)}
+      onOpenFiles={handleNavigateToFiles}
       onNavigateTerminal={handleNavigateToTerminal}
       onNavigateSettings={handleNavigateToSettings}
       onEditProfile={handleEditProfile}
@@ -460,11 +477,6 @@ function App() {
         )}
         <PageSection isFilled>{renderContent()}</PageSection>
       </div>
-
-      <FileManagementModal
-        isOpen={isFileManagementOpen}
-        onClose={() => setIsFileManagementOpen(false)}
-      />
 
       <Modal
         variant={ModalVariant.medium}
