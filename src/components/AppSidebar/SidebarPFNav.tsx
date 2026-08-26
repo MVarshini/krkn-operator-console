@@ -1,7 +1,6 @@
 import { Nav, NavItem, NavList, NavExpandable } from '@patternfly/react-core';
-import { CogIcon, TerminalIcon, PlayIcon, FolderIcon, EditIcon, KeyIcon, MoonIcon, SunIcon, PowerOffIcon, UserIcon } from '@patternfly/react-icons';
+import { CogIcon, TerminalIcon, PlayIcon, FolderIcon, EditIcon, KeyIcon, MoonIcon, SunIcon, PowerOffIcon, UserIcon, TopologyIcon } from '@patternfly/react-icons';
 import { MdWork } from 'react-icons/md';
-import { PiFlaskFill } from 'react-icons/pi';
 import type { ReactNode } from 'react';
 import type { SidebarNavProps } from './types';
 import './SidebarPFNav.css';
@@ -86,7 +85,7 @@ export function SidebarPFNav({
           </NavItem>
           <NavItem onClick={onRunScenario} aria-label="Run Scenario">{item(<PlayIcon />, 'Run Scenario')}</NavItem>
           <NavItem isActive={activePhase === 'studio'} onClick={onNavigateStudio} aria-label="Chaos Studio">
-            {item(<PiFlaskFill />, 'Chaos Studio')}
+            {item(<TopologyIcon />, 'Chaos Studio')}
           </NavItem>
           <NavItem onClick={onOpenFiles} aria-label="Files">{item(<FolderIcon />, 'Files')}</NavItem>
           <NavItem isActive={activePhase === 'terminal'} onClick={onNavigateTerminal} aria-label="Terminal">
