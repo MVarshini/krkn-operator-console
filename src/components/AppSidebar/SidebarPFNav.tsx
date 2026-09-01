@@ -1,5 +1,5 @@
 import { Nav, NavItem, NavList, NavExpandable } from '@patternfly/react-core';
-import { CogIcon, TerminalIcon, PlayIcon, FolderIcon, EditIcon, KeyIcon, MoonIcon, SunIcon, PowerOffIcon, UserIcon, TopologyIcon } from '@patternfly/react-icons';
+import { CogIcon, TerminalIcon, PlayIcon, FolderIcon, EditIcon, KeyIcon, MoonIcon, SunIcon, PowerOffIcon, UserIcon, TopologyIcon, DatabaseIcon } from '@patternfly/react-icons';
 import { MdWork } from 'react-icons/md';
 import type { ReactNode } from 'react';
 import type { SidebarNavProps } from './types';
@@ -63,6 +63,7 @@ export function SidebarPFNav({
   onNavigateStudio,
   onOpenFiles,
   onNavigateTerminal,
+  onNavigateElasticsearchData,
   onNavigateSettings,
   onEditProfile,
   onChangePassword,
@@ -90,6 +91,9 @@ export function SidebarPFNav({
           <NavItem onClick={onOpenFiles} aria-label="Files">{item(<FolderIcon />, 'Files')}</NavItem>
           <NavItem isActive={activePhase === 'terminal'} onClick={onNavigateTerminal} aria-label="Terminal">
             {item(<TerminalIcon />, 'Terminal')}
+          </NavItem>
+          <NavItem isActive={activePhase === 'elasticsearch_data'} onClick={onNavigateElasticsearchData} aria-label="Elasticsearch Data">
+            {item(<DatabaseIcon />, 'ES Data')}
           </NavItem>
           {isAdmin && (
             <NavItem isActive={activePhase === 'settings'} onClick={onNavigateSettings} aria-label="Settings">

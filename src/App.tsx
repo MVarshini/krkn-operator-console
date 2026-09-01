@@ -7,7 +7,7 @@ import { useAuth } from './context/AuthContext';
 import { useTargetPoller } from './hooks';
 import { useScenarioRunsPoller } from './hooks/useScenarioRunsPoller';
 import { useGraphRunsPoller } from './hooks/useGraphRunsPoller';
-import { LoadingScreen, ErrorDisplay, ClusterMultiSelector, RegistrySelector, ScenariosList, JobsList, Settings, TerminalContent, Studio } from './components';
+import { LoadingScreen, ErrorDisplay, ClusterMultiSelector, RegistrySelector, ScenariosList, JobsList, Settings, TerminalContent, Studio, ElasticsearchDataView } from './components';
 import { FileManagementModal } from './components/FileManagement';
 import { AppSidebar, SIDEBAR_RAIL_WIDTH } from './components/AppSidebar';
 import { useRole } from './hooks/useRole';
@@ -240,6 +240,13 @@ function App() {
       case 'settings':
         return <Settings />;
 
+      case 'elasticsearch_data':
+        return (
+          <PageSection>
+            <ElasticsearchDataView />
+          </PageSection>
+        );
+
       case 'terminal':
         return (
           <PageSection isFilled padding={{ default: 'noPadding' }} style={{ height: '100%' }}>
@@ -351,6 +358,12 @@ function App() {
     proceed();
   };
 
+  const handleNavigateToElasticsearchData = () => {
+    const proceed = () => dispatch({ type: 'NAVIGATE_TO_ELASTICSEARCH_DATA' });
+    if (!checkStudioGuard(proceed)) return;
+    proceed();
+  };
+
   const handleNavigateToHome = () => {
     const proceed = () => dispatch({ type: 'JOBS_LIST_READY' });
     if (!checkStudioGuard(proceed)) return;
@@ -412,6 +425,7 @@ function App() {
       onNavigateStudio={handleNavigateToStudio}
       onOpenFiles={handleNavigateToFiles}
       onNavigateTerminal={handleNavigateToTerminal}
+      onNavigateElasticsearchData={handleNavigateToElasticsearchData}
       onNavigateSettings={handleNavigateToSettings}
       onEditProfile={handleEditProfile}
       onChangePassword={handleChangePassword}
