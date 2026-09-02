@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   CardTitle,
@@ -19,7 +19,10 @@ import {
   ModalVariant,
   Alert,
   Label,
-  DatePicker
+  DatePicker,
+  FormHelperText,
+  HelperText,
+  HelperTextItem
 } from '@patternfly/react-core';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { DatabaseIcon, PlusCircleIcon } from '@patternfly/react-icons';
@@ -37,9 +40,49 @@ import type {
  * Formats an epoch-seconds timestamp as "MMM DD, YYYY, h:mm:ss AM/PM".
  * Returns an em dash when the timestamp is missing or zero.
  */
-/** Returns a "yyyy-MM-dd" date string for `daysAgo` days before now. */
+/**
+ * Returns a "yyyy-MM-dd" date string for `daysAgo` days before today, using the
+ * browser's local calendar date. Prior dates are computed with a calendar
+ * operation (setDate) rather than subtracting fixed 24-hour intervals so that
+ * daylight-saving transitions do not shift the result. Deriving the string from
+ * local year/month/day (instead of toISOString(), which is UTC) keeps the picker
+ * defaults, future-date validation, and query bounds on one timezone convention
+ * that matches the locally formatted telemetry timestamps.
+ */
 function isoDate(daysAgo = 0): string {
-  return new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Bounds for the "Max results" limit. The query is capped server-side, so the
+// UI enforces a sane positive-integer range rather than forwarding arbitrary
+// input.
+const MIN_SIZE = 1;
+const MAX_SIZE = 10000;
+
+/**
+ * Validates the raw "Max results" input. An empty value is allowed and means
+ * "no explicit limit" (the limit is omitted from the query). Any non-empty value
+ * must be a whole number within [MIN_SIZE, MAX_SIZE]; otherwise an inline error
+ * message is returned.
+ */
+function validateSize(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return null;
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return 'Max results must be a whole number';
+  }
+  const value = Number(trimmed);
+  if (value < MIN_SIZE || value > MAX_SIZE) {
+    return `Max results must be between ${MIN_SIZE} and ${MAX_SIZE}`;
+  }
+  return null;
 }
 
 function formatTimestamp(epochSeconds: number): string {
@@ -79,6 +122,21 @@ export function ElasticsearchDataView() {
   const [hasQueried, setHasQueried] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // Monotonic id identifying the most recent query. Each run captures the id it
+  // started with; a response only updates the table if its id still matches, so
+  // stale responses (from criteria that have since changed) are discarded.
+  const latestRequestId = useRef(0);
+
+  // Clears any displayed results and invalidates in-flight requests. Called
+  // whenever the query criteria change so the table never shows telemetry that
+  // no longer matches the current config, date range, or result limit.
+  const invalidateResults = useCallback(() => {
+    latestRequestId.current += 1;
+    setDocuments([]);
+    setHasQueried(false);
+    setQuerying(false);
+  }, []);
+
   const fetchConfigs = useCallback(async () => {
     try {
       const data = await elasticsearchApi.listConfigs();
@@ -100,6 +158,7 @@ export function ElasticsearchDataView() {
   const startAfterEnd = !!startDate && !!endDate && startDate > endDate;
   const endInFuture = !!endDate && endDate > today;
   const invalidDateRange = startAfterEnd || endInFuture;
+  const sizeError = validateSize(size);
 
   const handleRunQuery = async () => {
     if (!selectedConfig) {
@@ -114,21 +173,36 @@ export function ElasticsearchDataView() {
       showError('Invalid date range', 'End date must not be in the future');
       return;
     }
+    if (sizeError) {
+      showError('Invalid max results', sizeError);
+      return;
+    }
+    // Snapshot this run's id; only the latest run may commit its response.
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
     setQuerying(true);
     try {
-      const sizeNum = parseInt(size, 10) || undefined;
+      // An empty input intentionally omits the limit; a validated value is a
+      // bounded positive integer.
+      const trimmedSize = size.trim();
+      const sizeNum = trimmedSize === '' ? undefined : Number(trimmedSize);
       const result = await elasticsearchApi.queryTelemetry(
         selectedConfig,
         sizeNum,
         startDate || undefined,
         endDate || undefined,
       );
+      // Ignore responses superseded by a newer run or by a criteria change.
+      if (latestRequestId.current !== requestId) return;
       setDocuments(result.documents || []);
       setHasQueried(true);
     } catch (err) {
+      if (latestRequestId.current !== requestId) return;
       showError('Query failed', err instanceof Error ? err.message : 'Could not query Elasticsearch');
     } finally {
-      setQuerying(false);
+      if (latestRequestId.current === requestId) {
+        setQuerying(false);
+      }
     }
   };
 
@@ -173,7 +247,7 @@ export function ElasticsearchDataView() {
                     <FormSelect
                       id="es-data-config"
                       value={selectedConfig}
-                      onChange={(_e, v) => setSelectedConfig(v)}
+                      onChange={(_e, v) => { setSelectedConfig(v); invalidateResults(); }}
                       aria-label="Select an Elasticsearch config"
                     >
                       <FormSelectOption value="" label="Select a saved Elasticsearch config…" isDisabled />
@@ -188,7 +262,7 @@ export function ElasticsearchDataView() {
                     <DatePicker
                       id="es-data-start-date"
                       value={startDate}
-                      onChange={(_event, str) => setStartDate(str)}
+                      onChange={(_event, str) => { setStartDate(str); invalidateResults(); }}
                       aria-label="Start date"
                     />
                   </FormGroup>
@@ -199,7 +273,7 @@ export function ElasticsearchDataView() {
                     <DatePicker
                       id="es-data-end-date"
                       value={endDate}
-                      onChange={(_event, str) => setEndDate(str)}
+                      onChange={(_event, str) => { setEndDate(str); invalidateResults(); }}
                       // validators={[
                       //   (date: Date) =>
                       //     startDate && date < new Date(startDate)
@@ -219,10 +293,21 @@ export function ElasticsearchDataView() {
                     <TextInput
                       id="es-data-size"
                       type="number"
+                      min={MIN_SIZE}
+                      max={MAX_SIZE}
                       value={size}
-                      onChange={(_e, v) => setSize(v)}
+                      onChange={(_e, v) => { setSize(v); invalidateResults(); }}
+                      validated={sizeError ? 'error' : 'default'}
+                      aria-label="Max results"
                       style={{ width: '7rem' }}
                     />
+                    {sizeError && (
+                      <FormHelperText>
+                        <HelperText>
+                          <HelperTextItem variant="error">{sizeError}</HelperTextItem>
+                        </HelperText>
+                      </FormHelperText>
+                    )}
                   </FormGroup>
                 </FlexItem>
                 
@@ -232,7 +317,7 @@ export function ElasticsearchDataView() {
                   <Button
                     variant="primary"
                     onClick={handleRunQuery}
-                    isDisabled={querying || !selectedConfig || invalidDateRange}
+                    isDisabled={querying || !selectedConfig || invalidDateRange || !!sizeError}
                     isLoading={querying}
                   >
                     Run Query

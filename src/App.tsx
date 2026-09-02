@@ -136,25 +136,30 @@ function App() {
     }
   };
 
-  const handleCreateJob = async () => {
-    // Create initial target for fetching clusters
-    dispatch({ type: 'INIT_START' });
+  const handleCreateJob = () => {
+    const proceed = async () => {
+      // Create initial target for fetching clusters
+      dispatch({ type: 'INIT_START' });
 
-    try {
-      const response = await operatorApi.createTargetRequest();
-      dispatch({
-        type: 'INIT_SUCCESS',
-        payload: { uuid: response.uuid },
-      });
-    } catch (error) {
-      dispatch({
-        type: 'INIT_ERROR',
-        payload: {
-          type: 'network',
-          message: error instanceof Error ? error.message : 'Failed to create target',
-        },
-      });
-    }
+      try {
+        const response = await operatorApi.createTargetRequest();
+        dispatch({
+          type: 'INIT_SUCCESS',
+          payload: { uuid: response.uuid },
+        });
+      } catch (error) {
+        dispatch({
+          type: 'INIT_ERROR',
+          payload: {
+            type: 'network',
+            message: error instanceof Error ? error.message : 'Failed to create target',
+          },
+        });
+      }
+    };
+
+    if (!checkStudioGuard(proceed)) return;
+    proceed();
   };
 
   const handleRerunScenario = async (run: ScenarioRunState, jobId: string) => {

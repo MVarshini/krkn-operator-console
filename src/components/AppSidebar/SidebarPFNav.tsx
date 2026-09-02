@@ -26,6 +26,7 @@ import './SidebarPFNav.css';
  * @param onNavigateStudio - Called when Chaos Studio menu item is clicked
  * @param onOpenFiles - Called when Files menu item is clicked
  * @param onNavigateTerminal - Called when Terminal menu item is clicked
+ * @param onNavigateElasticsearchData - Called when Elasticsearch Data menu item is clicked
  * @param onNavigateSettings - Called when Settings menu item is clicked
  * @param onEditProfile - Called when Edit Profile menu item is clicked
  * @param onChangePassword - Called when Change Password menu item is clicked
@@ -45,6 +46,7 @@ import './SidebarPFNav.css';
  *   onNavigateStudio={() => console.log('studio')}
  *   onOpenFiles={() => console.log('files')}
  *   onNavigateTerminal={() => console.log('terminal')}
+ *   onNavigateElasticsearchData={() => console.log('elasticsearch data')}
  *   onNavigateSettings={() => console.log('settings')}
  *   onEditProfile={() => console.log('edit')}
  *   onChangePassword={() => console.log('password')}
