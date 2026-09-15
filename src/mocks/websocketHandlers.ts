@@ -1,6 +1,43 @@
 import { ws } from 'msw';
 
 // Mock data for WebSocket updates (matches REST mock data shapes)
+const mockScenarioRunUpdate = {
+  scenarioRunName: 'network-chaos-run-03',
+  scenarioName: 'network-chaos',
+  phase: 'Running',
+  totalTargets: 1,
+  successfulJobs: 0,
+  failedJobs: 0,
+  runningJobs: 1,
+  clusterJobs: [
+    {
+      providerName: 'aws',
+      clusterName: 'staging-us-east-1',
+      jobId: 'job-ghi-001',
+      podName: 'krkn-network-chaos-jkl',
+      phase: 'Running',
+      startTime: '2026-07-02T10:10:00Z',
+      containerImage: 'quay.io/krkn-chaos/krkn-hub:latest',
+    },
+  ],
+  createdAt: '2026-07-02T10:10:00Z',
+  ownerUserId: 'admin@preview.local',
+  registryName: 'default',
+};
+
+const mockJobsSnapshot = {
+  jobs: [
+    {
+      type: 'scenarioRun',
+      name: 'network-chaos-run-03',
+      createdAt: '2026-07-02T10:10:00Z',
+      scenarioRun: mockScenarioRunUpdate,
+    },
+  ],
+  pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
+  stats: { totalJobs: 1, succeededJobs: 0, failedJobs: 0 },
+};
+
 const mockGraphRunUpdate = {
   name: 'resilience-test-staging',
   namespace: 'krkn-operator-system',
@@ -13,41 +50,6 @@ const mockGraphRunUpdate = {
   resiliencyScoreEnabled: true,
   resiliencyScoreBaseline: 90.0,
   resiliencyScores: undefined as undefined | object[],
-};
-
-const mockJobsSnapshot = {
-  jobs: [
-    {
-      type: 'scenarioRun',
-      name: 'network-chaos-run-03',
-      createdAt: '2026-07-02T10:10:00Z',
-      scenarioRun: {
-        scenarioRunName: 'network-chaos-run-03',
-        scenarioName: 'network-chaos',
-        phase: 'Running',
-        totalTargets: 1,
-        successfulJobs: 0,
-        failedJobs: 0,
-        runningJobs: 1,
-        clusterJobs: [
-          {
-            providerName: 'aws',
-            clusterName: 'staging-us-east-1',
-            jobId: 'job-ghi-001',
-            podName: 'krkn-network-chaos-jkl',
-            phase: 'Running',
-            startTime: '2026-07-02T10:10:00Z',
-            containerImage: 'quay.io/krkn-chaos/krkn-hub:latest',
-          },
-        ],
-        createdAt: '2026-07-02T10:10:00Z',
-        ownerUserId: 'admin@preview.local',
-        registryName: 'default',
-      },
-    },
-  ],
-  pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
-  stats: { totalJobs: 1, succeededJobs: 0, failedJobs: 0 },
 };
 
 const mockDashboardUpdate = {
@@ -63,40 +65,65 @@ const mockDashboardUpdate = {
 
 // ws.link() handlers — each intercepts WebSocket connections to the matching URL pattern
 
-const jobsWs = ws.link('*/api/v2/ws/jobs');
+const runsWs = ws.link('*/api/v2/ws/runs');
 const graphrunsWs = ws.link('*/api/v2/ws/graphruns');
 const dashboardWs = ws.link('*/api/v2/ws/dashboard/active-runs');
 const logsWs = ws.link('*/api/v2/ws/scenarios/run/*/jobs/*/logs*');
 
-const jobsHandler = jobsWs.addEventListener('connection', ({ client }) => {
+type RunsSubscription = 'jobs' | 'run' | 'run-detail';
+
+export function createRunsMessage(
+  resource: string,
+  scenarioRun = mockScenarioRunUpdate,
+  runId = scenarioRun.scenarioRunName,
+) {
+  if (resource === 'jobs') {
+    return {
+      resource: 'jobs',
+      event: 'snapshot',
+      data: mockJobsSnapshot,
+      pagination: mockJobsSnapshot.pagination,
+      stats: mockJobsSnapshot.stats,
+    };
+  }
+
+  if (resource === 'run' || resource === 'run-detail') {
+    return {
+      resource,
+      id: runId,
+      event: 'updated',
+      data: resource === 'run-detail' ? { ...scenarioRun, scenarioRunName: runId } : scenarioRun,
+    };
+  }
+
+  return null;
+}
+
+const runsHandler = runsWs.addEventListener('connection', ({ client }) => {
   client.addEventListener('message', (event) => {
     try {
       const msg = JSON.parse(event.data as string);
-      if (msg.action === 'subscribe') {
-        setTimeout(() => {
-          client.send(JSON.stringify({
-            resource: 'jobs',
-            event: 'snapshot',
-            data: mockJobsSnapshot,
-            pagination: mockJobsSnapshot.pagination,
-            stats: mockJobsSnapshot.stats,
-          }));
-        }, 500);
+      if (msg.action === 'subscribe' && (['jobs', 'run', 'run-detail'] as RunsSubscription[]).includes(msg.resource)) {
+        const sendUpdate = () => {
+          const message = createRunsMessage(msg.resource, undefined, msg.ids?.[0]);
+          if (message) client.send(JSON.stringify(message));
+        };
+
+        setTimeout(sendUpdate, 500);
 
         const interval = setInterval(() => {
-          client.send(JSON.stringify({
-            resource: 'jobs',
-            event: 'snapshot',
-            data: mockJobsSnapshot,
-            pagination: mockJobsSnapshot.pagination,
-            stats: mockJobsSnapshot.stats,
-          }));
+          if (msg.resource === 'jobs') {
+            sendUpdate();
+            return;
+          }
+
+          sendUpdate();
         }, 5000);
 
         client.addEventListener('close', () => clearInterval(interval));
       }
     } catch {
-      // ignore
+      // ignore non-JSON messages
     }
   });
 });
@@ -198,4 +225,4 @@ const logsHandler = logsWs.addEventListener('connection', ({ client }) => {
   client.addEventListener('close', () => clearInterval(interval));
 });
 
-export const websocketHandlers = [jobsHandler, graphrunsHandler, dashboardHandler, logsHandler];
+export const websocketHandlers = [runsHandler, graphrunsHandler, dashboardHandler, logsHandler];
