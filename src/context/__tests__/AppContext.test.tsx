@@ -259,4 +259,20 @@ describe('AppContext reducer', () => {
       expect(capturedState.phase).toBe('elasticsearch_data');
     });
   });
+
+  describe('GO_BACK from elasticsearch_data', () => {
+    it('navigates from elasticsearch_data back to jobs_list', () => {
+      renderWithProvider();
+
+      act(() => {
+        capturedDispatch({ type: 'NAVIGATE_TO_ELASTICSEARCH_DATA' });
+      });
+
+      act(() => {
+        capturedDispatch({ type: 'GO_BACK' });
+      });
+
+      expect(capturedState.phase).toBe('jobs_list');
+    });
+  });
 });

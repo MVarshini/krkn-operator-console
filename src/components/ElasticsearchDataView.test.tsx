@@ -6,11 +6,16 @@ import { elasticsearchApi } from '../services/elasticsearchApi';
 import type { ElasticsearchConfig, QueryTelemetryResponse } from '../types/api';
 
 vi.mock('../services/elasticsearchApi');
+
+// Mutable admin flag so individual tests can exercise the admin vs non-admin
+// empty-state behavior via the mocked useRole hook.
+let mockIsAdmin = false;
 vi.mock('../hooks', () => ({
   useNotifications: () => ({
     showSuccess: vi.fn(),
     showError: vi.fn(),
   }),
+  useRole: () => ({ isAdmin: mockIsAdmin }),
 }));
 
 const mockConfigs: ElasticsearchConfig[] = [
@@ -34,6 +39,7 @@ const mockQueryResult: QueryTelemetryResponse = {
 describe('ElasticsearchDataView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsAdmin = false;
   });
 
   it('loads configs and populates the selector', async () => {
@@ -91,7 +97,7 @@ describe('ElasticsearchDataView', () => {
 
     expect(screen.queryByText('abc1234')).not.toBeInTheDocument();
     expect(
-      screen.getByText('Select a config and run a query to view telemetry data.'),
+      screen.getByText('Run a query to view telemetry data.'),
     ).toBeInTheDocument();
   });
 
@@ -122,7 +128,7 @@ describe('ElasticsearchDataView', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('Select a config and run a query to view telemetry data.'),
+        screen.getByText('Run a query to view telemetry data.'),
       ).toBeInTheDocument(),
     );
     expect(screen.queryByText('abc1234')).not.toBeInTheDocument();
@@ -253,12 +259,78 @@ describe('ElasticsearchDataView', () => {
     expect(select.value).toBe(newConfig.name);
   });
 
-  it('shows an empty state when no configs exist', async () => {
+  it('shows an empty state and inline connect form when no configs exist', async () => {
     vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue([]);
     render(<ElasticsearchDataView />);
 
     await waitFor(() => {
-      expect(screen.getByText('No Elasticsearch Configs')).toBeInTheDocument();
+      expect(screen.getByText('No Saved Elasticsearch Configs')).toBeInTheDocument();
     });
+    // Non-admins get the ephemeral connect form instead of a dead-end message.
+    expect(screen.getByText('Connect without saving')).toBeInTheDocument();
+    expect(screen.getByLabelText('Elasticsearch host')).toBeInTheDocument();
+    expect(screen.getByLabelText('Telemetry index')).toBeInTheDocument();
+  });
+
+  it('runs an inline query without a saved config and renders rows', async () => {
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue([]);
+    vi.mocked(elasticsearchApi.queryTelemetryInline).mockResolvedValue(mockQueryResult);
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('Connect without saving')).toBeInTheDocument());
+
+    await userEvent.type(screen.getByLabelText('Elasticsearch host'), 'https://es.example.com');
+    await userEvent.type(screen.getByLabelText('Elasticsearch port'), '9200');
+    await userEvent.type(screen.getByLabelText('Elasticsearch username'), 'user');
+    await userEvent.type(screen.getByLabelText('Elasticsearch password'), 'secret');
+    await userEvent.type(screen.getByLabelText('Telemetry index'), 'krkn-telemetry');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
+
+    await waitFor(() => {
+      expect(elasticsearchApi.queryTelemetryInline).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: 'https://es.example.com',
+          port: 9200,
+          username: 'user',
+          password: 'secret',
+          telemetryIndex: 'krkn-telemetry',
+        }),
+        50,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      );
+      expect(screen.getByText('abc1234')).toBeInTheDocument();
+    });
+    // Saved-config path must not be used for an inline query.
+    expect(elasticsearchApi.queryTelemetry).not.toHaveBeenCalled();
+  });
+
+  it('disables the inline Run Query button until host and index are provided', async () => {
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue([]);
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('Connect without saving')).toBeInTheDocument());
+
+    const runButton = screen.getByRole('button', { name: 'Run Query' });
+    expect(runButton).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Elasticsearch host'), 'https://es.example.com');
+    expect(runButton).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Telemetry index'), 'krkn-telemetry');
+    expect(runButton).toBeEnabled();
+  });
+
+  it('shows the Add Config button in the empty state for admins', async () => {
+    mockIsAdmin = true;
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue([]);
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add Config' })).toBeInTheDocument();
+    });
+    // The inline form is available to admins too.
+    expect(screen.getByText('Connect without saving')).toBeInTheDocument();
   });
 });

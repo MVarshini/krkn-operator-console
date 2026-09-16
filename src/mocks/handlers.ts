@@ -862,6 +862,8 @@ export const handlers = [
       total: 1,
     }),
   ),
+  // Handles both saved-config (configName) and ephemeral (inline) query bodies;
+  // the mock returns the same fixed telemetry regardless of connection source.
   http.post(`${BASE}/elasticsearch-query`, () =>
     HttpResponse.json({
       documents: [

@@ -15,6 +15,7 @@ import {
   FormSelect,
   FormSelectOption,
   TextInput,
+  Form,
   Modal,
   ModalVariant,
   Alert,
@@ -27,13 +28,15 @@ import {
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { DatabaseIcon, PlusCircleIcon } from '@patternfly/react-icons';
 import { elasticsearchApi } from '../services/elasticsearchApi';
-import { useNotifications } from '../hooks';
+import { useNotifications, useRole } from '../hooks';
 import { ElasticsearchConfigForm } from './ElasticsearchConfigsCard';
 import type {
   ElasticsearchConfig,
   TelemetryDocument,
   CreateElasticsearchConfigRequest,
   UpdateElasticsearchConfigRequest,
+  InlineElasticsearchConnection,
+  QueryTelemetryResponse,
 } from '../types/api';
 
 /**
@@ -121,6 +124,16 @@ export function ElasticsearchDataView() {
   const [querying, setQuerying] = useState(false);
   const [hasQueried, setHasQueried] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const {isAdmin} = useRole();
+
+  // Ephemeral (not saved) connection fields, used when no saved config exists.
+  // These values are held only in component state and are cleared on unmount;
+  // they are never persisted server-side (no createConfig call, no storage).
+  const [inlineHost, setInlineHost] = useState('');
+  const [inlinePort, setInlinePort] = useState('');
+  const [inlineUsername, setInlineUsername] = useState('');
+  const [inlinePassword, setInlinePassword] = useState('');
+  const [inlineIndex, setInlineIndex] = useState('');
 
   // Monotonic id identifying the most recent query. Each run captures the id it
   // started with; a response only updates the table if its id still matches, so
@@ -160,38 +173,42 @@ export function ElasticsearchDataView() {
   const invalidDateRange = startAfterEnd || endInFuture;
   const sizeError = validateSize(size);
 
-  const handleRunQuery = async () => {
-    if (!selectedConfig) {
-      showError('No config selected', 'Please select an Elasticsearch config to query');
-      return;
-    }
+  // Shared date/size validation for both the saved-config and inline query
+  // paths. Returns the validated size (or undefined) when valid, or null after
+  // surfacing an error so the caller can abort.
+  const validatedQueryArgs = (): { sizeNum: number | undefined } | null => {
     if (startAfterEnd) {
       showError('Invalid date range', 'Start date must not be after end date');
-      return;
+      return null;
     }
     if (endInFuture) {
       showError('Invalid date range', 'End date must not be in the future');
-      return;
+      return null;
     }
     if (sizeError) {
       showError('Invalid max results', sizeError);
-      return;
+      return null;
     }
+    // An empty input intentionally omits the limit; a validated value is a
+    // bounded positive integer.
+    const trimmedSize = size.trim();
+    return { sizeNum: trimmedSize === '' ? undefined : Number(trimmedSize) };
+  };
+
+  // Runs a telemetry query via the supplied fetcher, applying the monotonic
+  // request-id guard so stale responses are discarded. Shared by the saved
+  // config and inline connection paths.
+  const executeQuery = async (
+    runner: (sizeNum: number | undefined) => Promise<QueryTelemetryResponse>,
+  ) => {
+    const args = validatedQueryArgs();
+    if (!args) return;
     // Snapshot this run's id; only the latest run may commit its response.
     const requestId = latestRequestId.current + 1;
     latestRequestId.current = requestId;
     setQuerying(true);
     try {
-      // An empty input intentionally omits the limit; a validated value is a
-      // bounded positive integer.
-      const trimmedSize = size.trim();
-      const sizeNum = trimmedSize === '' ? undefined : Number(trimmedSize);
-      const result = await elasticsearchApi.queryTelemetry(
-        selectedConfig,
-        sizeNum,
-        startDate || undefined,
-        endDate || undefined,
-      );
+      const result = await runner(args.sizeNum);
       // Ignore responses superseded by a newer run or by a criteria change.
       if (latestRequestId.current !== requestId) return;
       setDocuments(result.documents || []);
@@ -206,6 +223,51 @@ export function ElasticsearchDataView() {
     }
   };
 
+  const handleRunQuery = async () => {
+    if (!selectedConfig) {
+      showError('No config selected', 'Please select an Elasticsearch config to query');
+      return;
+    }
+    await executeQuery((sizeNum) =>
+      elasticsearchApi.queryTelemetry(
+        selectedConfig,
+        sizeNum,
+        startDate || undefined,
+        endDate || undefined,
+      ),
+    );
+  };
+
+  // Inline form validity: host and telemetry index are the required fields.
+  const inlineComplete = inlineHost.trim() !== '' && inlineIndex.trim() !== '';
+
+  const handleRunInlineQuery = async () => {
+    if (!inlineComplete) {
+      showError('Missing connection details', 'Host and telemetry index are required');
+      return;
+    }
+    const trimmedPort = inlinePort.trim();
+    if (trimmedPort !== '' && !/^\d+$/.test(trimmedPort)) {
+      showError('Invalid port', 'Port must be a whole number');
+      return;
+    }
+    const inline: InlineElasticsearchConnection = {
+      host: inlineHost.trim(),
+      telemetryIndex: inlineIndex.trim(),
+      ...(trimmedPort !== '' ? { port: Number(trimmedPort) } : {}),
+      ...(inlineUsername.trim() !== '' ? { username: inlineUsername.trim() } : {}),
+      ...(inlinePassword !== '' ? { password: inlinePassword } : {}),
+    };
+    await executeQuery((sizeNum) =>
+      elasticsearchApi.queryTelemetryInline(
+        inline,
+        sizeNum,
+        startDate || undefined,
+        endDate || undefined,
+      ),
+    );
+  };
+
   const handleCreateConfig = async (
     data: CreateElasticsearchConfigRequest | UpdateElasticsearchConfigRequest,
   ) => {
@@ -215,6 +277,113 @@ export function ElasticsearchDataView() {
     await fetchConfigs();
     setSelectedConfig(createReq.name);
   };
+
+  // Shared results region: spinner while querying, an info prompt before the
+  // first run, an empty state when a query returned nothing, or the table.
+  const resultsSection = (
+    <div style={{ marginTop: '1.5rem' }}>
+      {querying ? (
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <Spinner size="lg" />
+        </div>
+      ) : !hasQueried ? (
+        <Alert
+          variant="info"
+          isInline
+          title="Run a query to view telemetry data."
+        />
+      ) : documents.length === 0 ? (
+        <EmptyState>
+          <EmptyStateIcon icon={DatabaseIcon} />
+          <Title headingLevel="h3" size="md">No telemetry documents found</Title>
+          <EmptyStateBody>
+            The telemetry index returned no results.
+          </EmptyStateBody>
+        </EmptyState>
+      ) : (
+        <Table isStriped={true} aria-label="Telemetry documents">
+          <Thead>
+            <Tr>
+              <Th>UUID</Th>
+              <Th>Scenario Type</Th>
+              <Th>Start Time</Th>
+              <Th>End Time</Th>
+              <Th>Namespace</Th>
+              <Th>Status</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
+            {documents.map((doc, idx) => (
+              <Tr key={doc.run_uuid || idx}>
+                <Td dataLabel="UUID">
+                  <code>{doc.run_uuid ? doc.run_uuid.slice(0, 7) : '—'}</code>
+                </Td>
+                <Td dataLabel="Scenario Type">{doc.scenario_type || '—'}</Td>
+                <Td dataLabel="Start Time">{formatTimestamp(doc.start_timestamp)}</Td>
+                <Td dataLabel="End Time">{formatTimestamp(doc.end_timestamp)}</Td>
+                <Td dataLabel="Namespace">{doc.namespace || '—'}</Td>
+                <Td dataLabel="Status">
+                  <Label color={doc.status ? 'green' : 'red'}>
+                    {doc.status ? 'Pass' : 'Fail'}
+                  </Label>
+                </Td>
+              </Tr>
+            ))}
+          </Tbody>
+        </Table>
+      )}
+    </div>
+  );
+
+  // Date-range and max-results controls shared by the saved-config and inline
+  // query forms.
+  const dateAndSizeControls = (
+    <>
+      <FlexItem>
+        <FormGroup label="Start Date" fieldId="es-data-start-date">
+          <DatePicker
+            id="es-data-start-date"
+            value={startDate}
+            onChange={(_event, str) => { setStartDate(str); invalidateResults(); }}
+            aria-label="Start date"
+          />
+        </FormGroup>
+      </FlexItem>
+      <FlexItem>to</FlexItem>
+      <FlexItem>
+        <FormGroup label="End Date" fieldId="es-data-end-date">
+          <DatePicker
+            id="es-data-end-date"
+            value={endDate}
+            onChange={(_event, str) => { setEndDate(str); invalidateResults(); }}
+            aria-label="End date"
+          />
+        </FormGroup>
+      </FlexItem>
+      <FlexItem>
+        <FormGroup label="Max results" fieldId="es-data-size">
+          <TextInput
+            id="es-data-size"
+            type="number"
+            min={MIN_SIZE}
+            max={MAX_SIZE}
+            value={size}
+            onChange={(_e, v) => { setSize(v); invalidateResults(); }}
+            validated={sizeError ? 'error' : 'default'}
+            aria-label="Max results"
+            style={{ width: '7rem' }}
+          />
+          {sizeError && (
+            <FormHelperText>
+              <HelperText>
+                <HelperTextItem variant="error">{sizeError}</HelperTextItem>
+              </HelperText>
+            </FormHelperText>
+          )}
+        </FormGroup>
+      </FlexItem>
+    </>
+  );
 
   return (
     <>
@@ -228,16 +397,99 @@ export function ElasticsearchDataView() {
               <Spinner size="xl" />
             </div>
           ) : configs.length === 0 ? (
-            <EmptyState>
-              <EmptyStateIcon icon={DatabaseIcon} />
-              <Title headingLevel="h3" size="lg">No Elasticsearch Configs</Title>
-              <EmptyStateBody>
-                Add an Elasticsearch configuration to query telemetry data.
-              </EmptyStateBody>
-              <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreateModal(true)}>
-                Add Config
-              </Button>
-            </EmptyState>
+            <>
+              <EmptyState>
+                <EmptyStateIcon icon={DatabaseIcon} />
+                <Title headingLevel="h3" size="lg">No Saved Elasticsearch Configs</Title>
+                <EmptyStateBody>
+                  {isAdmin ? (
+                    <p>Add a saved Elasticsearch configuration, or connect below without saving to query telemetry data.</p>
+                  ) : (
+                    <p>No saved configuration is available. Enter connection details below to connect without saving and query telemetry data.</p>
+                  )}
+                </EmptyStateBody>
+                {isAdmin && (
+                  <Button variant="primary" icon={<PlusCircleIcon />} onClick={() => setShowCreateModal(true)}>
+                    Add Config
+                  </Button>
+                )}
+              </EmptyState>
+
+              <Title headingLevel="h3" size="md" style={{ marginTop: '1.5rem' }}>
+                Connect without saving
+              </Title>
+              <FormHelperText>
+                <HelperText>
+                  <HelperTextItem>
+                    These connection details are used only for this session and are not stored on the server.
+                  </HelperTextItem>
+                </HelperText>
+              </FormHelperText>
+
+              <Form style={{ marginTop: '1rem', maxWidth: '40em' }}>
+                <FormGroup label="Host" fieldId="es-inline-host" isRequired>
+                  <TextInput
+                    id="es-inline-host"
+                    value={inlineHost}
+                    onChange={(_e, v) => { setInlineHost(v); invalidateResults(); }}
+                    placeholder="https://elasticsearch.example.com"
+                    aria-label="Elasticsearch host"
+                  />
+                </FormGroup>
+                <FormGroup label="Port" fieldId="es-inline-port">
+                  <TextInput
+                    id="es-inline-port"
+                    type="number"
+                    value={inlinePort}
+                    onChange={(_e, v) => { setInlinePort(v); invalidateResults(); }}
+                    placeholder="9200"
+                    aria-label="Elasticsearch port"
+                  />
+                </FormGroup>
+                <FormGroup label="Username" fieldId="es-inline-username">
+                  <TextInput
+                    id="es-inline-username"
+                    value={inlineUsername}
+                    onChange={(_e, v) => { setInlineUsername(v); invalidateResults(); }}
+                    aria-label="Elasticsearch username"
+                  />
+                </FormGroup>
+                <FormGroup label="Password" fieldId="es-inline-password">
+                  <TextInput
+                    id="es-inline-password"
+                    type="password"
+                    value={inlinePassword}
+                    onChange={(_e, v) => { setInlinePassword(v); invalidateResults(); }}
+                    aria-label="Elasticsearch password"
+                  />
+                </FormGroup>
+                <FormGroup label="Telemetry Index" fieldId="es-inline-index" isRequired>
+                  <TextInput
+                    id="es-inline-index"
+                    value={inlineIndex}
+                    onChange={(_e, v) => { setInlineIndex(v); invalidateResults(); }}
+                    aria-label="Telemetry index"
+                  />
+                </FormGroup>
+                <Flex alignItems={{ default: 'alignItemsFlexEnd' }} spaceItems={{ default: 'spaceItemsMd' }}>
+                  {dateAndSizeControls}
+                  <FlexItem>
+                    <FormGroup label="" fieldId="run-inline-query-btn">
+                      <Button
+                        variant="primary"
+                        onClick={handleRunInlineQuery}
+                        isDisabled={querying || !inlineComplete || invalidDateRange || !!sizeError}
+                        isLoading={querying}
+                      >
+                        Run Query
+                      </Button>
+                    </FormGroup>
+                  </FlexItem>
+                </Flex>
+              </Form>
+
+              {resultsSection}
+            </>
           ) : (
             <>
               <Flex alignItems={{ default: 'alignItemsFlexEnd' }}
@@ -257,61 +509,7 @@ export function ElasticsearchDataView() {
                     </FormSelect>
                   </FormGroup>
                 </FlexItem>
-                <FlexItem>
-                  <FormGroup label="Start Date" fieldId="es-data-start-date">
-                    <DatePicker
-                      id="es-data-start-date"
-                      value={startDate}
-                      onChange={(_event, str) => { setStartDate(str); invalidateResults(); }}
-                      aria-label="Start date"
-                    />
-                  </FormGroup>
-                </FlexItem>
-                <FlexItem>to</FlexItem>
-                <FlexItem>
-                  <FormGroup label="End Date" fieldId="es-data-end-date">
-                    <DatePicker
-                      id="es-data-end-date"
-                      value={endDate}
-                      onChange={(_event, str) => { setEndDate(str); invalidateResults(); }}
-                      // validators={[
-                      //   (date: Date) =>
-                      //     startDate && date < new Date(startDate)
-                      //       ? 'End date must not be before start date'
-                      //       : '',
-                      //   (date: Date) =>
-                      //     date > new Date(today)
-                      //       ? 'End date must not be in the future'
-                      //       : '',
-                      // ]}
-                      aria-label="End date"
-                    />
-                  </FormGroup>
-                </FlexItem>
-                <FlexItem>
-                  <FormGroup label="Max results" fieldId="es-data-size">
-                    <TextInput
-                      id="es-data-size"
-                      type="number"
-                      min={MIN_SIZE}
-                      max={MAX_SIZE}
-                      value={size}
-                      onChange={(_e, v) => { setSize(v); invalidateResults(); }}
-                      validated={sizeError ? 'error' : 'default'}
-                      aria-label="Max results"
-                      style={{ width: '7rem' }}
-                    />
-                    {sizeError && (
-                      <FormHelperText>
-                        <HelperText>
-                          <HelperTextItem variant="error">{sizeError}</HelperTextItem>
-                        </HelperText>
-                      </FormHelperText>
-                    )}
-                  </FormGroup>
-                </FlexItem>
-                
-               
+                {dateAndSizeControls}
                 <FlexItem>
                     <FormGroup label="" fieldId="run-query-btn">
                   <Button
@@ -331,58 +529,7 @@ export function ElasticsearchDataView() {
                 </FlexItem>
               </Flex>
 
-              <div style={{ marginTop: '1.5rem' }}>
-                {querying ? (
-                  <div style={{ textAlign: 'center', padding: '2rem' }}>
-                    <Spinner size="lg" />
-                  </div>
-                ) : !hasQueried ? (
-                  <Alert
-                    variant="info"
-                    isInline
-                    title="Select a config and run a query to view telemetry data."
-                  />
-                ) : documents.length === 0 ? (
-                  <EmptyState>
-                    <EmptyStateIcon icon={DatabaseIcon} />
-                    <Title headingLevel="h3" size="md">No telemetry documents found</Title>
-                    <EmptyStateBody>
-                      The telemetry index for this config returned no results.
-                    </EmptyStateBody>
-                  </EmptyState>
-                ) : (
-                  <Table isStriped={true} aria-label="Telemetry documents">
-                    <Thead>
-                      <Tr>
-                        <Th>UUID</Th>
-                        <Th>Scenario Type</Th>
-                        <Th>Start Time</Th>
-                        <Th>End Time</Th>
-                        <Th>Namespace</Th>
-                        <Th>Status</Th>
-                      </Tr>
-                    </Thead>
-                    <Tbody>
-                      {documents.map((doc, idx) => (
-                        <Tr key={doc.run_uuid || idx}>
-                          <Td dataLabel="UUID">
-                            <code>{doc.run_uuid ? doc.run_uuid.slice(0, 7) : '—'}</code>
-                          </Td>
-                          <Td dataLabel="Scenario Type">{doc.scenario_type || '—'}</Td>
-                          <Td dataLabel="Start Time">{formatTimestamp(doc.start_timestamp)}</Td>
-                          <Td dataLabel="End Time">{formatTimestamp(doc.end_timestamp)}</Td>
-                          <Td dataLabel="Namespace">{doc.namespace || '—'}</Td>
-                          <Td dataLabel="Status">
-                            <Label color={doc.status ? 'green' : 'red'}>
-                              {doc.status ? 'Pass' : 'Fail'}
-                            </Label>
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                )}
-              </div>
+              {resultsSection}
             </>
           )}
         </CardBody>

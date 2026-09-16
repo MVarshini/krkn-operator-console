@@ -18,6 +18,7 @@ import {
   Form,
   ActionGroup,
   Alert,
+  Checkbox,
 } from '@patternfly/react-core';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { PlusCircleIcon, DatabaseIcon } from '@patternfly/react-icons';
@@ -46,6 +47,9 @@ export function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = 
   const [metricsIndex, setMetricsIndex] = useState(initial?.metricsIndex ?? '');
   const [alertsIndex, setAlertsIndex] = useState(initial?.alertsIndex ?? '');
   const [grafanaUrl, setGrafanaUrl] = useState(initial?.grafanaUrl ?? '');
+  // Admin-only TLS toggle. Initialized from the existing config so an edit
+  // re-submits the current value explicitly (never silently flips it).
+  const [insecureSkipTlsVerify, setInsecureSkipTlsVerify] = useState(initial?.insecureSkipTlsVerify ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +77,7 @@ export function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = 
           metricsIndex: metricsIndex.trim() || undefined,
           alertsIndex: alertsIndex.trim() || undefined,
           grafanaUrl: grafanaUrl.trim() || undefined,
+          insecureSkipTlsVerify,
         };
         await onSubmit(req);
       } else {
@@ -86,6 +91,7 @@ export function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = 
           metricsIndex: metricsIndex.trim() || undefined,
           alertsIndex: alertsIndex.trim() || undefined,
           grafanaUrl: grafanaUrl.trim() || undefined,
+          insecureSkipTlsVerify,
         };
         await onSubmit(req);
       }
@@ -189,6 +195,16 @@ export function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = 
           value={grafanaUrl}
           onChange={(_e, v) => setGrafanaUrl(v)}
           placeholder="https://grafana.example.com/d/abc"
+        />
+      </FormGroup>
+
+      <FormGroup fieldId="es-insecure-skip-tls">
+        <Checkbox
+          id="es-insecure-skip-tls"
+          label="Disable TLS certificate verification"
+          description="Insecure. Only use for clusters with self-signed certificates you trust."
+          isChecked={insecureSkipTlsVerify}
+          onChange={(_e, checked) => setInsecureSkipTlsVerify(checked)}
         />
       </FormGroup>
 
