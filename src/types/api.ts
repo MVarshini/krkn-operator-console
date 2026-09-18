@@ -402,6 +402,7 @@ export type AppPhase =
   | 'studio' // Chaos Scenario Studio page
   | 'terminal' // Full-screen cluster terminal page
   | 'files' // File management page
+  | 'elasticsearch_data' // Elasticsearch telemetry data table page
   | 'selecting_clusters' // Multi-cluster selection
   | 'configuring_registry'
   | 'loading_scenarios'
@@ -557,6 +558,7 @@ export type AppAction =
   | { type: 'NAVIGATE_TO_STUDIO' }
   | { type: 'NAVIGATE_TO_TERMINAL' }
   | { type: 'NAVIGATE_TO_FILES' }
+  | { type: 'NAVIGATE_TO_ELASTICSEARCH_DATA' }
 
   // Notifications
   | { type: 'SHOW_NOTIFICATION'; payload: { notification: Notification } }
@@ -1360,6 +1362,9 @@ export interface ElasticsearchConfig {
   createdBy?: string;
   updatedAt?: string;
   updatedBy?: string;
+  // Whether TLS certificate verification is disabled for this config. Admin-only
+  // setting, surfaced so the edit form can show and re-submit the current value.
+  insecureSkipTlsVerify?: boolean;
 }
 
 export interface CreateElasticsearchConfigRequest {
@@ -1372,6 +1377,8 @@ export interface CreateElasticsearchConfigRequest {
   metricsIndex?: string;
   alertsIndex?: string;
   grafanaUrl?: string;
+  // Admin-only: disable TLS certificate verification for this config.
+  insecureSkipTlsVerify?: boolean;
 }
 
 export interface UpdateElasticsearchConfigRequest {
@@ -1383,6 +1390,9 @@ export interface UpdateElasticsearchConfigRequest {
   metricsIndex?: string;
   alertsIndex?: string;
   grafanaUrl?: string;
+  // Admin-only: disable TLS certificate verification. Omitting the field leaves
+  // the stored setting unchanged; an explicit boolean sets or clears it.
+  insecureSkipTlsVerify?: boolean;
 }
 
 export interface ListElasticsearchConfigsResponse {
@@ -1393,4 +1403,46 @@ export interface ListElasticsearchConfigsResponse {
 export interface ElasticsearchConfigOperationResponse {
   message: string;
   name?: string;
+}
+
+// Elasticsearch telemetry query types
+
+// InlineElasticsearchConnection carries an ephemeral connection supplied
+// directly on a query instead of referencing a saved config. It lets any user
+// (including non-admins, who cannot create stored configs) connect to an ES
+// cluster and fetch telemetry without persisting credentials. The values are
+// used only for the request and are never saved.
+export interface InlineElasticsearchConnection {
+  host: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  telemetryIndex: string;
+}
+
+export interface QueryTelemetryRequest {
+  // Exactly one of configName or inline must be supplied.
+  configName?: string;
+  inline?: InlineElasticsearchConnection;
+  size?: number;
+  // "yyyy-MM-dd" date bounds on the document timestamp. Omitted values fall back
+  // to a default trailing window on the backend.
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface TelemetryDocument {
+  run_uuid: string;
+  scenario_type: string;
+  // Epoch seconds; 0 when the scenario did not report a timestamp.
+  start_timestamp: number;
+  end_timestamp: number;
+  namespace: string;
+  // true = passed, false = failed.
+  status: boolean;
+}
+
+export interface QueryTelemetryResponse {
+  documents: TelemetryDocument[];
+  total: number;
 }

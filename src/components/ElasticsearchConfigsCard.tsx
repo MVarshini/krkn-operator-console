@@ -18,6 +18,7 @@ import {
   Form,
   ActionGroup,
   Alert,
+  Checkbox,
 } from '@patternfly/react-core';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { PlusCircleIcon, DatabaseIcon } from '@patternfly/react-icons';
@@ -36,7 +37,7 @@ interface ElasticsearchConfigFormProps {
   isEdit?: boolean;
 }
 
-function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = false }: ElasticsearchConfigFormProps) {
+export function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = false }: ElasticsearchConfigFormProps) {
   const [name, setName] = useState(initial?.name ?? '');
   const [host, setHost] = useState(initial?.host ?? '');
   const [port, setPort] = useState(String(initial?.port ?? 9200));
@@ -46,6 +47,9 @@ function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = false }
   const [metricsIndex, setMetricsIndex] = useState(initial?.metricsIndex ?? '');
   const [alertsIndex, setAlertsIndex] = useState(initial?.alertsIndex ?? '');
   const [grafanaUrl, setGrafanaUrl] = useState(initial?.grafanaUrl ?? '');
+  // Admin-only TLS toggle. Initialized from the existing config so an edit
+  // re-submits the current value explicitly (never silently flips it).
+  const [insecureSkipTlsVerify, setInsecureSkipTlsVerify] = useState(initial?.insecureSkipTlsVerify ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +77,7 @@ function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = false }
           metricsIndex: metricsIndex.trim() || undefined,
           alertsIndex: alertsIndex.trim() || undefined,
           grafanaUrl: grafanaUrl.trim() || undefined,
+          insecureSkipTlsVerify,
         };
         await onSubmit(req);
       } else {
@@ -86,6 +91,7 @@ function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = false }
           metricsIndex: metricsIndex.trim() || undefined,
           alertsIndex: alertsIndex.trim() || undefined,
           grafanaUrl: grafanaUrl.trim() || undefined,
+          insecureSkipTlsVerify,
         };
         await onSubmit(req);
       }
@@ -189,6 +195,16 @@ function ElasticsearchConfigForm({ initial, onSubmit, onCancel, isEdit = false }
           value={grafanaUrl}
           onChange={(_e, v) => setGrafanaUrl(v)}
           placeholder="https://grafana.example.com/d/abc"
+        />
+      </FormGroup>
+
+      <FormGroup fieldId="es-insecure-skip-tls">
+        <Checkbox
+          id="es-insecure-skip-tls"
+          label="Disable TLS certificate verification"
+          description="Insecure. Only use for clusters with self-signed certificates you trust."
+          isChecked={insecureSkipTlsVerify}
+          onChange={(_e, checked) => setInsecureSkipTlsVerify(checked)}
         />
       </FormGroup>
 

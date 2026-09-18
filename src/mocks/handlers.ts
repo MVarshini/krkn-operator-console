@@ -861,6 +861,33 @@ export const handlers = [
     });
   }),
 
+  // ─── ELASTICSEARCH ───
+  http.get(`${BASE}/elasticsearch-configs`, () =>
+    HttpResponse.json({
+      configs: [
+        { name: 'prod-es', host: 'https://es.example.com', port: 9200, telemetryIndex: 'krkn-telemetry' },
+      ],
+      total: 1,
+    }),
+  ),
+  // Handles both saved-config (configName) and ephemeral (inline) query bodies;
+  // the mock returns the same fixed telemetry regardless of connection source.
+  http.post(`${BASE}/elasticsearch-query`, () =>
+    HttpResponse.json({
+      documents: [
+        {
+          run_uuid: 'abc1234-rest-of-uuid',
+          scenario_type: 'pod_disruption_scenarios',
+          start_timestamp: 1735689600,
+          end_timestamp: 1735689900,
+          namespace: 'openshift-kube-apiserver',
+          status: true,
+        },
+      ],
+      total: 1,
+    }),
+  ),
+
   // ─── CATCH-ALL ───
   http.all(`${BASE}/*`, ({ request }) => {
     if (request.method === 'GET') return HttpResponse.json({});

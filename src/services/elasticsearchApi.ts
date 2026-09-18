@@ -5,6 +5,8 @@ import type {
   UpdateElasticsearchConfigRequest,
   ListElasticsearchConfigsResponse,
   ElasticsearchConfigOperationResponse,
+  QueryTelemetryResponse,
+  InlineElasticsearchConnection,
 } from '../types/api';
 
 const API_BASE = '/api/v1';
@@ -40,6 +42,41 @@ class ElasticsearchApi extends BaseApiClient {
   async deleteConfig(name: string): Promise<ElasticsearchConfigOperationResponse> {
     return this.fetchJson<ElasticsearchConfigOperationResponse>(`/elasticsearch-configs/${encodeURIComponent(name)}`, {
       method: 'DELETE',
+    });
+  }
+
+  /**
+   * Queries telemetry documents from the telemetry index of a saved config.
+   * Credentials are resolved server-side from the named config; only the config
+   * name (and optional result size) are sent.
+   */
+  async queryTelemetry(
+    configName: string,
+    size?: number,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<QueryTelemetryResponse> {
+    return this.fetchJson<QueryTelemetryResponse>('/elasticsearch-query', {
+      method: 'POST',
+      body: JSON.stringify({ configName, size, startDate, endDate }),
+    });
+  }
+
+  /**
+   * Queries telemetry using an ephemeral inline connection instead of a saved
+   * config. The supplied credentials are sent for this request only and are
+   * never persisted server-side. Intended for users (including non-admins) who
+   * have no saved config but need to connect to an ES cluster ad hoc.
+   */
+  async queryTelemetryInline(
+    inline: InlineElasticsearchConnection,
+    size?: number,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<QueryTelemetryResponse> {
+    return this.fetchJson<QueryTelemetryResponse>('/elasticsearch-query', {
+      method: 'POST',
+      body: JSON.stringify({ inline, size, startDate, endDate }),
     });
   }
 }
