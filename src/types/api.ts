@@ -1406,6 +1406,9 @@ export interface QueryTelemetryRequest {
   // to a default trailing window on the backend.
   startDate?: string;
   endDate?: string;
+  // Selected facet filters keyed by category (e.g. "cloud_type"). Values within a
+  // category are OR-ed, categories are AND-ed. Unknown categories are rejected.
+  filters?: Record<string, string[]>;
 }
 
 export interface TelemetryDocument {
@@ -1427,8 +1430,19 @@ export interface TelemetryStats {
   pass_percent: number; // 0-100
 }
 
+// One selectable value for a filter category, with its document count in the
+// matched window. Populates the value multi-select.
+export interface FacetOption {
+  value: string;
+  count: number;
+}
+
 export interface QueryTelemetryResponse {
   documents: TelemetryDocument[];
   total: number;
   stats: TelemetryStats;
+  // Available filter values per category, derived from terms aggregations. Used
+  // to populate the value multi-select. Because filters are applied in the query,
+  // facets narrow as filters are selected.
+  facets?: Record<string, FacetOption[]>;
 }

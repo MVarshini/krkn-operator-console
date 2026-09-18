@@ -22,7 +22,12 @@ import {
   DatePicker,
   FormHelperText,
   HelperText,
-  HelperTextItem
+  HelperTextItem,
+  Select,
+  SelectList,
+  SelectOption,
+  MenuToggle,
+  Badge
 } from '@patternfly/react-core';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { DatabaseIcon, PlusCircleIcon } from '@patternfly/react-icons';
@@ -34,9 +39,23 @@ import type {
   ElasticsearchConfig,
   TelemetryDocument,
   TelemetryStats,
+  FacetOption,
   CreateElasticsearchConfigRequest,
   UpdateElasticsearchConfigRequest,
 } from '../types/api';
+
+// Filter categories shown in the single-select category dropdown. Each key must
+// match a facet key returned by the backend (see facetFields in the operator's
+// pkg/elasticsearch/client.go); the value multi-select is populated from the
+// response facets for the selected key.
+const FILTER_CATEGORIES: { key: string; label: string }[] = [
+  { key: 'scenario_type', label: 'Scenario Type' },
+  { key: 'job_status', label: 'Job Status' },
+  { key: 'cloud_infrastructure', label: 'Cloud Infrastructure' },
+  { key: 'cloud_type', label: 'Cloud Type' },
+  { key: 'major_version', label: 'Major Version' },
+  { key: 'network_plugins', label: 'Network Plugins' },
+];
 
 /**
  * Formats an epoch-seconds timestamp as "MMM DD, YYYY, h:mm:ss AM/PM".
@@ -125,6 +144,17 @@ export function ElasticsearchDataView() {
   const [hasQueried, setHasQueried] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // Faceted filtering: `filterCategory` is the category currently being edited in
+  // the value dropdown; `activeFilters` accumulates the selected values across
+  // every category (category key → values), so multiple categories can be
+  // filtered at once. `facets` are the available values from the most recent
+  // response. Selecting values re-queries automatically (see handleRunQuery);
+  // facets narrow with filters because the backend applies them in the query.
+  const [filterCategory, setFilterCategory] = useState('');
+  const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
+  const [facets, setFacets] = useState<Record<string, FacetOption[]>>({});
+  const [isValueSelectOpen, setIsValueSelectOpen] = useState(false);
+
   // Monotonic id identifying the most recent query. Each run captures the id it
   // started with; a response only updates the table if its id still matches, so
   // stale responses (from criteria that have since changed) are discarded.
@@ -139,6 +169,12 @@ export function ElasticsearchDataView() {
     setStats(null);
     setHasQueried(false);
     setQuerying(false);
+    // Filters and facets are derived from a query response, so they must not
+    // outlive a change to the config, date range, or result limit.
+    setFilterCategory('');
+    setActiveFilters({});
+    setFacets({});
+    setIsValueSelectOpen(false);
   }, []);
 
   const fetchConfigs = useCallback(async () => {
@@ -164,7 +200,10 @@ export function ElasticsearchDataView() {
   const invalidDateRange = startAfterEnd || endInFuture;
   const sizeError = validateSize(size);
 
-  const handleRunQuery = async () => {
+  // handleRunQuery runs a query with the current criteria. filtersArg lets the
+  // caller pass the filters explicitly (avoiding a stale read of filter state
+  // right after a set) — the category/value handlers use it to auto re-query.
+  const handleRunQuery = async (filtersArg?: Record<string, string[]>) => {
     if (!selectedConfig) {
       showError('No config selected', 'Please select an Elasticsearch config to query');
       return;
@@ -195,11 +234,13 @@ export function ElasticsearchDataView() {
         sizeNum,
         startDate || undefined,
         endDate || undefined,
+        filtersArg,
       );
       // Ignore responses superseded by a newer run or by a criteria change.
       if (latestRequestId.current !== requestId) return;
       setDocuments(result.documents || []);
       setStats(result.stats ?? null);
+      setFacets(result.facets ?? {});
       setHasQueried(true);
     } catch (err) {
       if (latestRequestId.current !== requestId) return;
@@ -210,6 +251,44 @@ export function ElasticsearchDataView() {
       }
     }
   };
+
+  // buildFilters drops empty value slices so an empty filter set is sent as
+  // undefined (unfiltered query).
+  const buildFilters = (
+    map: Record<string, string[]>,
+  ): Record<string, string[]> | undefined => {
+    const entries = Object.entries(map).filter(([, values]) => values.length > 0);
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  };
+
+  // Switching category only changes which category the value dropdown edits.
+  // Existing selections in other categories are kept (multiple categories can be
+  // filtered at once), so no re-query is needed here.
+  const handleCategoryChange = (category: string) => {
+    setFilterCategory(category);
+    setIsValueSelectOpen(false);
+  };
+
+  // Toggling a value updates the current category's selection within
+  // activeFilters and immediately re-queries with the full filter set across all
+  // categories (auto re-query), keeping the multi-select open.
+  const handleValueToggle = (value: string) => {
+    if (!filterCategory) return;
+    const current = activeFilters[filterCategory] ?? [];
+    const nextValues = current.includes(value)
+      ? current.filter((v) => v !== value)
+      : [...current, value];
+    const next = { ...activeFilters, [filterCategory]: nextValues };
+    setActiveFilters(next);
+    void handleRunQuery(buildFilters(next));
+  };
+
+  const selectedValues = filterCategory ? activeFilters[filterCategory] ?? [] : [];
+  const valueOptions = filterCategory ? facets[filterCategory] ?? [] : [];
+  const activeFilterCount = Object.values(activeFilters).reduce(
+    (sum, values) => sum + values.length,
+    0,
+  );
 
   const handleCreateConfig = async (
     data: CreateElasticsearchConfigRequest | UpdateElasticsearchConfigRequest,
@@ -321,7 +400,9 @@ export function ElasticsearchDataView() {
                     <FormGroup label="" fieldId="run-query-btn">
                   <Button
                     variant="primary"
-                    onClick={handleRunQuery}
+                    onClick={() => {
+                      void handleRunQuery(buildFilters(activeFilters));
+                    }}
                     isDisabled={querying || !selectedConfig || invalidDateRange || !!sizeError}
                     isLoading={querying}
                   >
@@ -335,6 +416,124 @@ export function ElasticsearchDataView() {
                   </Button>
                 </FlexItem>
               </Flex>
+
+              {/* Faceted filters. Values come from the last response's facets, so
+                  they appear only after a query has run. Selecting a category
+                  populates the value multi-select; toggling values auto re-queries. */}
+              {hasQueried && (
+                <Flex
+                  alignItems={{ default: 'alignItemsFlexEnd' }}
+                  spaceItems={{ default: 'spaceItemsMd' }}
+                  style={{ marginTop: '1rem' }}
+                >
+                  <FlexItem>
+                    <FormGroup label="Filter category" fieldId="es-filter-category" style={{ width: '18em' }}>
+                      <FormSelect
+                        id="es-filter-category"
+                        value={filterCategory}
+                        onChange={(_e, v) => handleCategoryChange(v)}
+                        aria-label="Select a filter category"
+                      >
+                        <FormSelectOption value="" label="Select a category…" />
+                        {FILTER_CATEGORIES.map((c) => (
+                          <FormSelectOption key={c.key} value={c.key} label={c.label} />
+                        ))}
+                      </FormSelect>
+                    </FormGroup>
+                  </FlexItem>
+                  <FlexItem>
+                    <FormGroup label="Filter values" fieldId="es-filter-values">
+                      <Select
+                        id="es-filter-values"
+                        role="menu"
+                        isOpen={isValueSelectOpen}
+                        onOpenChange={(isOpen) => setIsValueSelectOpen(isOpen)}
+                        selected={selectedValues}
+                        onSelect={(_e, value) => handleValueToggle(value as string)}
+                        toggle={(toggleRef) => (
+                          <MenuToggle
+                            ref={toggleRef}
+                            onClick={() => setIsValueSelectOpen(!isValueSelectOpen)}
+                            isExpanded={isValueSelectOpen}
+                            isDisabled={!filterCategory || valueOptions.length === 0}
+                            style={{ width: '22em' }}
+                          >
+                            {selectedValues.length > 0 ? 'Values' : 'Select values…'}
+                            {selectedValues.length > 0 && (
+                              <Badge isRead style={{ marginLeft: '0.5rem' }}>
+                                {selectedValues.length}
+                              </Badge>
+                            )}
+                          </MenuToggle>
+                        )}
+                      >
+                        <SelectList>
+                          {valueOptions.map((opt) => (
+                            <SelectOption
+                              key={opt.value}
+                              value={opt.value}
+                              hasCheckbox
+                              isSelected={selectedValues.includes(opt.value)}
+                            >
+                              {opt.value} ({opt.count})
+                            </SelectOption>
+                          ))}
+                        </SelectList>
+                      </Select>
+                    </FormGroup>
+                  </FlexItem>
+                  {activeFilterCount > 0 && (
+                    <FlexItem>
+                      <Button
+                        variant="link"
+                        isInline
+                        onClick={() => {
+                          setFilterCategory('');
+                          setActiveFilters({});
+                          setIsValueSelectOpen(false);
+                          void handleRunQuery(undefined);
+                        }}
+                      >
+                        Clear all filters
+                      </Button>
+                    </FlexItem>
+                  )}
+                </Flex>
+              )}
+
+              {/* Active filter chips across all categories, so applied filters
+                  from categories other than the one currently being edited stay
+                  visible. Removing a value re-queries with the updated set. */}
+              {hasQueried && activeFilterCount > 0 && (
+                <Flex
+                  spaceItems={{ default: 'spaceItemsSm' }}
+                  style={{ marginTop: '0.75rem' }}
+                >
+                  {Object.entries(activeFilters).flatMap(([category, values]) =>
+                    values.map((value) => {
+                      const label =
+                        FILTER_CATEGORIES.find((c) => c.key === category)?.label ?? category;
+                      return (
+                        <FlexItem key={`${category}:${value}`}>
+                          <Label
+                            color="blue"
+                            onClose={() => {
+                              const nextValues = (activeFilters[category] ?? []).filter(
+                                (v) => v !== value,
+                              );
+                              const next = { ...activeFilters, [category]: nextValues };
+                              setActiveFilters(next);
+                              void handleRunQuery(buildFilters(next));
+                            }}
+                          >
+                            {label}: {value}
+                          </Label>
+                        </FlexItem>
+                      );
+                    }),
+                  )}
+                </Flex>
+              )}
 
               {hasQueried && !querying && stats && (
                 <div style={{ marginTop: '1.5rem' }}>

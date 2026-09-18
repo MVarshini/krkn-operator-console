@@ -54,10 +54,11 @@ class ElasticsearchApi extends BaseApiClient {
     size?: number,
     startDate?: string,
     endDate?: string,
+    filters?: Record<string, string[]>,
   ): Promise<QueryTelemetryResponse> {
     return this.fetchJson<QueryTelemetryResponse>('/elasticsearch-query', {
       method: 'POST',
-      body: JSON.stringify({ configName, size, startDate, endDate }),
+      body: JSON.stringify({ configName, size, startDate, endDate, filters }),
     });
   }
 }
