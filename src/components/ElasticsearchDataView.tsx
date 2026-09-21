@@ -14,20 +14,18 @@ import {
   FormGroup,
   FormSelect,
   FormSelectOption,
-  TextInput,
   Modal,
   ModalVariant,
   Alert,
   Label,
   DatePicker,
-  FormHelperText,
-  HelperText,
-  HelperTextItem,
   Select,
   SelectList,
   SelectOption,
   MenuToggle,
-  Badge
+  Badge,
+  Pagination,
+  PaginationVariant
 } from '@patternfly/react-core';
 import { Table, Thead, Tbody, Tr, Th, Td } from '@patternfly/react-table';
 import { DatabaseIcon, PlusCircleIcon } from '@patternfly/react-icons';
@@ -79,32 +77,9 @@ function isoDate(daysAgo = 0): string {
   return `${year}-${month}-${day}`;
 }
 
-// Bounds for the "Max results" limit. The query is capped server-side, so the
-// UI enforces a sane positive-integer range rather than forwarding arbitrary
-// input.
-const MIN_SIZE = 1;
-const MAX_SIZE = 10000;
-
-/**
- * Validates the raw "Max results" input. An empty value is allowed and means
- * "no explicit limit" (the limit is omitted from the query). Any non-empty value
- * must be a whole number within [MIN_SIZE, MAX_SIZE]; otherwise an inline error
- * message is returned.
- */
-function validateSize(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (trimmed === '') {
-    return null;
-  }
-  if (!/^\d+$/.test(trimmed)) {
-    return 'Max results must be a whole number';
-  }
-  const value = Number(trimmed);
-  if (value < MIN_SIZE || value > MAX_SIZE) {
-    return `Max results must be between ${MIN_SIZE} and ${MAX_SIZE}`;
-  }
-  return null;
-}
+// Page-size options for the telemetry table pagination. The query is capped
+// server-side (MaxQuerySize), so these stay within a sane range.
+const PER_PAGE_OPTIONS = [10, 20, 50, 100];
 
 function formatTimestamp(epochSeconds: number): string {
   if (!epochSeconds) {
@@ -134,7 +109,12 @@ export function ElasticsearchDataView() {
   const { showError } = useNotifications();
   const [configs, setConfigs] = useState<ElasticsearchConfig[]>([]);
   const [selectedConfig, setSelectedConfig] = useState('');
-  const [size, setSize] = useState('50');
+  // Server-side pagination: perPage is the page size sent as `size`, page is the
+  // 1-based page number, and total is the whole-window match count from the last
+  // response used to compute the page count.
+  const [perPage, setPerPage] = useState(50);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [startDate, setStartDate] = useState(isoDate(10));
   const [endDate, setEndDate] = useState(isoDate(0));
   const [documents, setDocuments] = useState<TelemetryDocument[]>([]);
@@ -167,6 +147,8 @@ export function ElasticsearchDataView() {
     latestRequestId.current += 1;
     setDocuments([]);
     setStats(null);
+    setTotal(0);
+    setPage(1);
     setHasQueried(false);
     setQuerying(false);
     // Filters and facets are derived from a query response, so they must not
@@ -198,12 +180,17 @@ export function ElasticsearchDataView() {
   const startAfterEnd = !!startDate && !!endDate && startDate > endDate;
   const endInFuture = !!endDate && endDate > today;
   const invalidDateRange = startAfterEnd || endInFuture;
-  const sizeError = validateSize(size);
 
   // handleRunQuery runs a query with the current criteria. filtersArg lets the
   // caller pass the filters explicitly (avoiding a stale read of filter state
   // right after a set) — the category/value handlers use it to auto re-query.
-  const handleRunQuery = async (filtersArg?: Record<string, string[]>) => {
+  // pageArg lets the caller run a specific page (avoiding a stale read of page
+  // state right after a set); it defaults to the current page.
+  const handleRunQuery = async (
+    filtersArg?: Record<string, string[]>,
+    pageArg?: number,
+    perPageArg?: number,
+  ) => {
     if (!selectedConfig) {
       showError('No config selected', 'Please select an Elasticsearch config to query');
       return;
@@ -216,22 +203,17 @@ export function ElasticsearchDataView() {
       showError('Invalid date range', 'End date must not be in the future');
       return;
     }
-    if (sizeError) {
-      showError('Invalid max results', sizeError);
-      return;
-    }
+    const currentPage = pageArg ?? page;
+    const currentPerPage = perPageArg ?? perPage;
     // Snapshot this run's id; only the latest run may commit its response.
     const requestId = latestRequestId.current + 1;
     latestRequestId.current = requestId;
     setQuerying(true);
     try {
-      // An empty input intentionally omits the limit; a validated value is a
-      // bounded positive integer.
-      const trimmedSize = size.trim();
-      const sizeNum = trimmedSize === '' ? undefined : Number(trimmedSize);
       const result = await elasticsearchApi.queryTelemetry(
         selectedConfig,
-        sizeNum,
+        currentPerPage,
+        currentPage,
         startDate || undefined,
         endDate || undefined,
         filtersArg,
@@ -240,6 +222,7 @@ export function ElasticsearchDataView() {
       if (latestRequestId.current !== requestId) return;
       setDocuments(result.documents || []);
       setStats(result.stats ?? null);
+      setTotal(result.total ?? 0);
       setFacets(result.facets ?? {});
       setHasQueried(true);
     } catch (err) {
@@ -280,7 +263,9 @@ export function ElasticsearchDataView() {
       : [...current, value];
     const next = { ...activeFilters, [filterCategory]: nextValues };
     setActiveFilters(next);
-    void handleRunQuery(buildFilters(next));
+    // A filter change resets to the first page of the new result set.
+    setPage(1);
+    void handleRunQuery(buildFilters(next), 1);
   };
 
   const selectedValues = filterCategory ? activeFilters[filterCategory] ?? [] : [];
@@ -373,37 +358,15 @@ export function ElasticsearchDataView() {
                   </FormGroup>
                 </FlexItem>
                 <FlexItem>
-                  <FormGroup label="Max results" fieldId="es-data-size">
-                    <TextInput
-                      id="es-data-size"
-                      type="number"
-                      min={MIN_SIZE}
-                      max={MAX_SIZE}
-                      value={size}
-                      onChange={(_e, v) => { setSize(v); invalidateResults(); }}
-                      validated={sizeError ? 'error' : 'default'}
-                      aria-label="Max results"
-                      style={{ width: '7rem' }}
-                    />
-                    {sizeError && (
-                      <FormHelperText>
-                        <HelperText>
-                          <HelperTextItem variant="error">{sizeError}</HelperTextItem>
-                        </HelperText>
-                      </FormHelperText>
-                    )}
-                  </FormGroup>
-                </FlexItem>
-                
-               
-                <FlexItem>
                     <FormGroup label="" fieldId="run-query-btn">
                   <Button
                     variant="primary"
                     onClick={() => {
-                      void handleRunQuery(buildFilters(activeFilters));
+                      // A fresh run always starts at the first page.
+                      setPage(1);
+                      void handleRunQuery(buildFilters(activeFilters), 1);
                     }}
-                    isDisabled={querying || !selectedConfig || invalidDateRange || !!sizeError}
+                    isDisabled={querying || !selectedConfig || invalidDateRange}
                     isLoading={querying}
                   >
                     Run Query
@@ -491,7 +454,8 @@ export function ElasticsearchDataView() {
                           setFilterCategory('');
                           setActiveFilters({});
                           setIsValueSelectOpen(false);
-                          void handleRunQuery(undefined);
+                          setPage(1);
+                          void handleRunQuery(undefined, 1);
                         }}
                       >
                         Clear all filters
@@ -523,7 +487,8 @@ export function ElasticsearchDataView() {
                               );
                               const next = { ...activeFilters, [category]: nextValues };
                               setActiveFilters(next);
-                              void handleRunQuery(buildFilters(next));
+                              setPage(1);
+                              void handleRunQuery(buildFilters(next), 1);
                             }}
                           >
                             {label}: {value}
@@ -539,7 +504,7 @@ export function ElasticsearchDataView() {
                 <div style={{ marginTop: '1.5rem' }}>
                   <JobStatsSummary
                     stats={{
-                      // Whole matched window: response.total counts only the returned page.
+                      // Whole matched window; equals response.total.
                       totalJobs: stats.pass + stats.fail,
                       succeededJobs: stats.pass,
                       failedJobs: stats.fail,
@@ -575,6 +540,25 @@ export function ElasticsearchDataView() {
                     </EmptyStateBody>
                   </EmptyState>
                 ) : (
+                  <>
+                  <Pagination
+                    itemCount={total}
+                    perPage={perPage}
+                    page={page}
+                    onSetPage={(_evt, newPage) => {
+                      setPage(newPage);
+                      void handleRunQuery(buildFilters(activeFilters), newPage);
+                    }}
+                    onPerPageSelect={(_evt, newPerPage) => {
+                      // Changing page size returns to the first page.
+                      setPerPage(newPerPage);
+                      setPage(1);
+                      void handleRunQuery(buildFilters(activeFilters), 1, newPerPage);
+                    }}
+                    variant={PaginationVariant.top}
+                    isCompact
+                    perPageOptions={PER_PAGE_OPTIONS.map((n) => ({ title: String(n), value: n }))}
+                  />
                   <Table isStriped={true} aria-label="Telemetry documents">
                     <Thead>
                       <Tr>
@@ -605,6 +589,24 @@ export function ElasticsearchDataView() {
                       ))}
                     </Tbody>
                   </Table>
+                  <Pagination
+                    itemCount={total}
+                    perPage={perPage}
+                    page={page}
+                    onSetPage={(_evt, newPage) => {
+                      setPage(newPage);
+                      void handleRunQuery(buildFilters(activeFilters), newPage);
+                    }}
+                    onPerPageSelect={(_evt, newPerPage) => {
+                      setPerPage(newPerPage);
+                      setPage(1);
+                      void handleRunQuery(buildFilters(activeFilters), 1, newPerPage);
+                    }}
+                    variant={PaginationVariant.bottom}
+                    perPageOptions={PER_PAGE_OPTIONS.map((n) => ({ title: String(n), value: n }))}
+                    style={{ marginTop: '1rem' }}
+                  />
+                  </>
                 )}
               </div>
             </>

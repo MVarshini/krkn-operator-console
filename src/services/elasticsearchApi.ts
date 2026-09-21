@@ -47,18 +47,20 @@ class ElasticsearchApi extends BaseApiClient {
   /**
    * Queries telemetry documents from the telemetry index of a saved config.
    * Credentials are resolved server-side from the named config; only the config
-   * name (and optional result size) are sent.
+   * name (and optional paging/filter criteria) are sent. size is the page size
+   * and page is the 1-based page number used for server-side pagination.
    */
   async queryTelemetry(
     configName: string,
     size?: number,
+    page?: number,
     startDate?: string,
     endDate?: string,
     filters?: Record<string, string[]>,
   ): Promise<QueryTelemetryResponse> {
     return this.fetchJson<QueryTelemetryResponse>('/elasticsearch-query', {
       method: 'POST',
-      body: JSON.stringify({ configName, size, startDate, endDate, filters }),
+      body: JSON.stringify({ configName, size, page, startDate, endDate, filters }),
     });
   }
 }

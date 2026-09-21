@@ -1401,7 +1401,10 @@ export interface ElasticsearchConfigOperationResponse {
 
 export interface QueryTelemetryRequest {
   configName: string;
+  // size is the page size; page is the 1-based page number. The backend computes
+  // the Elasticsearch offset as (page-1)*size.
   size?: number;
+  page?: number;
   // "yyyy-MM-dd" date bounds on the document timestamp. Omitted values fall back
   // to a default trailing window on the backend.
   startDate?: string;

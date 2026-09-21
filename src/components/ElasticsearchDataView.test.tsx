@@ -59,12 +59,15 @@ describe('ElasticsearchDataView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
 
     await waitFor(() => {
-      // Called with config, size, and the default start/end date bounds.
+      // Called with config, page size, page number, and the default start/end
+      // date bounds; no filters are selected so the filter arg is undefined.
       expect(elasticsearchApi.queryTelemetry).toHaveBeenCalledWith(
         'prod-es',
         50,
+        1,
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        undefined,
       );
       // UUID is truncated to the first 7 characters.
       expect(screen.getByText('abc1234')).toBeInTheDocument();
@@ -85,10 +88,10 @@ describe('ElasticsearchDataView', () => {
 
     await waitFor(() => expect(screen.getByText('abc1234')).toBeInTheDocument());
 
-    // Changing the result limit invalidates the previously displayed telemetry.
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-    await userEvent.type(sizeInput, '25');
+    // Changing the date range invalidates the previously displayed telemetry.
+    const endInput = screen.getByLabelText('End date');
+    await userEvent.clear(endInput);
+    await userEvent.type(endInput, '2025-01-01');
 
     expect(screen.queryByText('abc1234')).not.toBeInTheDocument();
     expect(
@@ -114,9 +117,9 @@ describe('ElasticsearchDataView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
 
     // Change a criterion while the first response is still pending.
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-    await userEvent.type(sizeInput, '25');
+    const endInput = screen.getByLabelText('End date');
+    await userEvent.clear(endInput);
+    await userEvent.type(endInput, '2025-01-01');
 
     // The in-flight response now resolves, but it is stale and must be ignored.
     resolveQuery(mockQueryResult);
@@ -148,47 +151,33 @@ describe('ElasticsearchDataView', () => {
     expect(elasticsearchApi.queryTelemetry).not.toHaveBeenCalled();
   });
 
-  it('blocks the query and shows an inline error when max results is out of range', async () => {
+  it('re-queries the next page when the pagination control advances', async () => {
     vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
-    vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue(mockQueryResult);
+    // total exceeds the page size so the pagination controls render.
+    vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue({
+      ...mockQueryResult,
+      total: 120,
+    });
     render(<ElasticsearchDataView />);
 
     await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
     await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
-
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-    await userEvent.type(sizeInput, '999999');
-
-    expect(screen.getByText('Max results must be between 1 and 10000')).toBeInTheDocument();
-
-    const runButton = screen.getByRole('button', { name: 'Run Query' });
-    expect(runButton).toBeDisabled();
-
-    await userEvent.click(runButton);
-    expect(elasticsearchApi.queryTelemetry).not.toHaveBeenCalled();
-  });
-
-  it('omits the size limit when max results is left empty', async () => {
-    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
-    vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue(mockQueryResult);
-    render(<ElasticsearchDataView />);
-
-    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
-
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-
     await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
 
+    await waitFor(() => expect(screen.getByText('abc1234')).toBeInTheDocument());
+
+    // Advancing to the next page re-queries with page 2 at the same page size.
+    const nextButtons = screen.getAllByRole('button', { name: /go to next page/i });
+    await userEvent.click(nextButtons[0]);
+
     await waitFor(() => {
-      // Empty input intentionally omits the limit (undefined size).
-      expect(elasticsearchApi.queryTelemetry).toHaveBeenCalledWith(
+      expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
         'prod-es',
+        50,
+        2,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         undefined,
-        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       );
     });
   });
