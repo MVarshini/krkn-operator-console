@@ -308,6 +308,13 @@ export function ElasticsearchDataView() {
   const handleCreateConfig = async (
     data: CreateElasticsearchConfigRequest | UpdateElasticsearchConfigRequest,
   ) => {
+    // Creating a shared saved config is an administrator-only operation, matching
+    // the Settings > Elasticsearch tab boundary. Guard the submit path so the
+    // role check cannot be bypassed even if a create control is reached.
+    if (!isAdmin) {
+      showError('Not authorized', 'Only administrators can add Elasticsearch configs');
+      return;
+    }
     const createReq = data as CreateElasticsearchConfigRequest;
     await elasticsearchApi.createConfig(createReq);
     setShowCreateModal(false);
@@ -587,11 +594,13 @@ export function ElasticsearchDataView() {
                   </Button>
                   </FormGroup>
                 </FlexItem>
-                <FlexItem>
-                  <Button variant="link" icon={<PlusCircleIcon />} onClick={() => setShowCreateModal(true)}>
-                    Add new config
-                  </Button>
-                </FlexItem>
+                {isAdmin && (
+                  <FlexItem>
+                    <Button variant="link" icon={<PlusCircleIcon />} onClick={() => setShowCreateModal(true)}>
+                      Add new config
+                    </Button>
+                  </FlexItem>
+                )}
               </Flex>
 
               {resultsSection}
@@ -600,17 +609,19 @@ export function ElasticsearchDataView() {
         </CardBody>
       </Card>
 
-      <Modal
-        variant={ModalVariant.medium}
-        title="Add Elasticsearch Config"
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-      >
-        <ElasticsearchConfigForm
-          onSubmit={handleCreateConfig}
-          onCancel={() => setShowCreateModal(false)}
-        />
-      </Modal>
+      {isAdmin && (
+        <Modal
+          variant={ModalVariant.medium}
+          title="Add Elasticsearch Config"
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+        >
+          <ElasticsearchConfigForm
+            onSubmit={handleCreateConfig}
+            onCancel={() => setShowCreateModal(false)}
+          />
+        </Modal>
+      )}
     </>
   );
 }

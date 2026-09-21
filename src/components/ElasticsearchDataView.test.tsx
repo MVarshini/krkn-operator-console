@@ -271,6 +271,8 @@ describe('ElasticsearchDataView', () => {
   });
 
   it('creates a config, refreshes the list, closes the modal, and selects the new config', async () => {
+    // Config creation is admin-only; the create controls only render for admins.
+    mockIsAdmin = true;
     const newConfig: ElasticsearchConfig = {
       name: 'staging-es',
       host: 'https://staging.example.com',
@@ -329,6 +331,15 @@ describe('ElasticsearchDataView', () => {
     });
     const select = screen.getByLabelText('Select an Elasticsearch config') as HTMLSelectElement;
     expect(select.value).toBe(newConfig.name);
+  });
+
+  it('hides the Add new config control from non-admins when saved configs exist', async () => {
+    // Non-admin (default). Saved configs load, but config creation is admin-only.
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Add new config' })).not.toBeInTheDocument();
   });
 
   it('shows an empty state and inline connect form when no configs exist', async () => {
