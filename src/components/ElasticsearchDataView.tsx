@@ -20,6 +20,8 @@ import {
   Alert,
   Label,
   DatePicker,
+  isValidDate,
+  yyyyMMddFormat,
   FormHelperText,
   HelperText,
   HelperTextItem
@@ -87,6 +89,19 @@ function validateSize(raw: string): string | null {
   return null;
 }
 
+/**
+ * Normalizes a DatePicker change into a stored "yyyy-MM-dd" bound. PatternFly
+ * supplies the parsed `date` alongside the raw input string; an empty input
+ * clears the bound, and any string that does not parse to a valid date whose
+ * canonical format matches the input is rejected (stored as '') so a malformed
+ * value can never enable or reach the query.
+ */
+function parseDateInput(str: string, date: Date | undefined): string {
+  if (str.trim() === '') return '';
+  if (date && isValidDate(date) && str === yyyyMMddFormat(date)) return str;
+  return '';
+}
+
 function formatTimestamp(epochSeconds: number): string {
   if (!epochSeconds) {
     return '—';
@@ -110,6 +125,19 @@ function formatTimestamp(epochSeconds: number): string {
  * used in Settings), then run a query. Connection credentials never reach the
  * browser — the backend resolves them from the named config and performs the
  * search server-side.
+ *
+ * Takes no props; all state is internal. Mount it directly for the
+ * `elasticsearch_data` phase.
+ *
+ * @example
+ * import { ElasticsearchDataView } from './components';
+ *
+ * case 'elasticsearch_data':
+ *   return (
+ *     <PageSection>
+ *       <ElasticsearchDataView />
+ *     </PageSection>
+ *   );
  */
 export function ElasticsearchDataView() {
   const { showError } = useNotifications();
@@ -219,6 +247,9 @@ export function ElasticsearchDataView() {
     setShowCreateModal(false);
     await fetchConfigs();
     setSelectedConfig(createReq.name);
+    // Switching config must clear results from the prior config and invalidate
+    // any in-flight request, matching the selector's onChange behavior.
+    invalidateResults();
   };
 
   return (
@@ -267,7 +298,7 @@ export function ElasticsearchDataView() {
                     <DatePicker
                       id="es-data-start-date"
                       value={startDate}
-                      onChange={(_event, str) => { setStartDate(str); invalidateResults(); }}
+                      onChange={(_event, str, date) => { setStartDate(parseDateInput(str, date)); invalidateResults(); }}
                       aria-label="Start date"
                     />
                   </FormGroup>
@@ -278,7 +309,7 @@ export function ElasticsearchDataView() {
                     <DatePicker
                       id="es-data-end-date"
                       value={endDate}
-                      onChange={(_event, str) => { setEndDate(str); invalidateResults(); }}
+                      onChange={(_event, str, date) => { setEndDate(parseDateInput(str, date)); invalidateResults(); }}
                       // validators={[
                       //   (date: Date) =>
                       //     startDate && date < new Date(startDate)

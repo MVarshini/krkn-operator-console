@@ -885,6 +885,7 @@ export const handlers = [
         },
       ],
       total: 1,
+      stats: { pass: 1, fail: 0, pass_percent: 100 },
     }),
   ),
 

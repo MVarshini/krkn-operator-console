@@ -10,10 +10,13 @@ vi.mock('../services/elasticsearchApi');
 // Mutable admin flag so individual tests can exercise the admin vs non-admin
 // empty-state behavior via the mocked useRole hook.
 let mockIsAdmin = false;
+// Stable notification spies so tests can assert on the exact showError call.
+const mockShowError = vi.hoisted(() => vi.fn());
+const mockShowSuccess = vi.hoisted(() => vi.fn());
 vi.mock('../hooks', () => ({
   useNotifications: () => ({
-    showSuccess: vi.fn(),
-    showError: vi.fn(),
+    showSuccess: mockShowSuccess,
+    showError: mockShowError,
   }),
   useRole: () => ({ isAdmin: mockIsAdmin }),
 }));
@@ -78,6 +81,74 @@ describe('ElasticsearchDataView', () => {
       expect(screen.getByText('openshift-kube-apiserver')).toBeInTheDocument();
       expect(screen.getByText('Pass')).toBeInTheDocument();
     });
+  });
+
+  it('renders the telemetry summary with overridden labels, values, and pass rate', async () => {
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
+    // pass=3, fail=1 gives distinct values and a 75.0% pass rate computed by
+    // JobStatsSummary from succeededJobs/totalJobs.
+    vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue({
+      ...mockQueryResult,
+      stats: { pass: 3, fail: 1, pass_percent: 75 },
+    });
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
+    await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
+
+    // Overridden card labels replace the job-flavored defaults.
+    await waitFor(() => expect(screen.getByText('Total Runs')).toBeInTheDocument());
+    expect(screen.getByText('Passed')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(screen.getByText('Pass Rate')).toBeInTheDocument();
+
+    // Values: total = pass + fail, passed = pass, failed = fail.
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    // Pass rate recomputed as succeeded / total.
+    expect(screen.getByText('75.0%')).toBeInTheDocument();
+
+    // Overridden card footers.
+    expect(screen.getByText('Runs across matched window')).toBeInTheDocument();
+    expect(screen.getByText('status = true')).toBeInTheDocument();
+    expect(screen.getByText('status = false')).toBeInTheDocument();
+    expect(screen.getByText('Percentage of runs that passed')).toBeInTheDocument();
+  });
+
+  it('shows an error notification and no results when the query request rejects', async () => {
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
+    vi.mocked(elasticsearchApi.queryTelemetry).mockRejectedValue(new Error('boom'));
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
+    await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
+
+    // Rejection surfaces the error message via the notification system.
+    await waitFor(() =>
+      expect(mockShowError).toHaveBeenCalledWith('Query failed', 'boom'),
+    );
+
+    // No telemetry is committed.
+    expect(screen.queryByText('abc1234')).not.toBeInTheDocument();
+    // Querying finished, so the button is interactive again.
+    expect(screen.getByRole('button', { name: 'Run Query' })).toBeEnabled();
+  });
+
+  it('falls back to a generic message when the query rejects with a non-Error', async () => {
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
+    vi.mocked(elasticsearchApi.queryTelemetry).mockRejectedValue('nope');
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
+    await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
+
+    await waitFor(() =>
+      expect(mockShowError).toHaveBeenCalledWith('Query failed', 'Could not query Elasticsearch'),
+    );
   });
 
   it('clears displayed results when a query criterion changes', async () => {

@@ -55,6 +55,7 @@ describe('AppSidebar', () => {
     expect(screen.getByText('Chaos Studio')).toBeInTheDocument();
     expect(screen.getByText('Files')).toBeInTheDocument();
     expect(screen.getByText('Terminal')).toBeInTheDocument();
+    expect(screen.getByText('ES Data')).toBeInTheDocument();
   });
 
   it('hides the Settings item for non-admins', () => {
@@ -85,6 +86,9 @@ describe('AppSidebar', () => {
 
     await user.click(screen.getByText('Terminal'));
     expect(handlers.onNavigateTerminal).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByText('ES Data'));
+    expect(handlers.onNavigateElasticsearchData).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByText('Settings'));
     expect(handlers.onNavigateSettings).toHaveBeenCalledTimes(1);
@@ -117,6 +121,13 @@ describe('AppSidebar', () => {
     const current = container.querySelector('.pf-m-current');
     expect(current).not.toBeNull();
     expect(current).toHaveTextContent('Terminal');
+  });
+
+  it('marks the ES Data item as current for its phase', () => {
+    const { container } = renderSidebar({ activePhase: 'elasticsearch_data' });
+    const current = container.querySelector('.pf-m-current');
+    expect(current).not.toBeNull();
+    expect(current).toHaveTextContent('ES Data');
   });
 
   it('is collapsed by default and expands on hover', async () => {

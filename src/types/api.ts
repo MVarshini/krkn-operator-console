@@ -1407,7 +1407,6 @@ export interface ElasticsearchConfigOperationResponse {
 
 // Elasticsearch telemetry query types
 
-<<<<<<< HEAD
 // InlineElasticsearchConnection carries an ephemeral connection supplied
 // directly on a query instead of referencing a saved config. It lets any user
 // (including non-admins, who cannot create stored configs) connect to an ES
@@ -1425,10 +1424,6 @@ export interface QueryTelemetryRequest {
   // Exactly one of configName or inline must be supplied.
   configName?: string;
   inline?: InlineElasticsearchConnection;
-=======
-export interface QueryTelemetryRequest {
-  configName: string;
->>>>>>> e2cc6a3 (feat(elasticsearch): add telemetry data view with date-range query)
   size?: number;
   // "yyyy-MM-dd" date bounds on the document timestamp. Omitted values fall back
   // to a default trailing window on the backend.
