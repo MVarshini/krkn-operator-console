@@ -21,6 +21,8 @@ import {
   Alert,
   Label,
   DatePicker,
+  isValidDate,
+  yyyyMMddFormat,
   FormHelperText,
   HelperText,
   HelperTextItem
@@ -30,9 +32,11 @@ import { DatabaseIcon, PlusCircleIcon } from '@patternfly/react-icons';
 import { elasticsearchApi } from '../services/elasticsearchApi';
 import { useNotifications, useRole } from '../hooks';
 import { ElasticsearchConfigForm } from './ElasticsearchConfigsCard';
+import { JobStatsSummary } from './JobStatsSummary';
 import type {
   ElasticsearchConfig,
   TelemetryDocument,
+  TelemetryStats,
   CreateElasticsearchConfigRequest,
   UpdateElasticsearchConfigRequest,
   InlineElasticsearchConnection,
@@ -88,6 +92,19 @@ function validateSize(raw: string): string | null {
   return null;
 }
 
+/**
+ * Normalizes a DatePicker change into a stored "yyyy-MM-dd" bound. PatternFly
+ * supplies the parsed `date` alongside the raw input string; an empty input
+ * clears the bound, and any string that does not parse to a valid date whose
+ * canonical format matches the input is rejected (stored as '') so a malformed
+ * value can never enable or reach the query.
+ */
+function parseDateInput(str: string, date: Date | undefined): string {
+  if (str.trim() === '') return '';
+  if (date && isValidDate(date) && str === yyyyMMddFormat(date)) return str;
+  return '';
+}
+
 function formatTimestamp(epochSeconds: number): string {
   if (!epochSeconds) {
     return '—';
@@ -105,12 +122,29 @@ function formatTimestamp(epochSeconds: number): string {
 
 /**
  * ElasticsearchDataView — top-level page that queries telemetry documents from a
- * saved Elasticsearch configuration and renders them in a table.
+ * saved Elasticsearch configuration (or an ephemeral inline connection) and
+ * renders them in a table.
  *
  * Users pick a saved config from a dropdown (or add a new one via the same form
- * used in Settings), then run a query. Connection credentials never reach the
- * browser — the backend resolves them from the named config and performs the
+ * used in Settings), then run a query. When no saved config exists, non-admins
+ * (and admins who prefer not to persist credentials) can supply connection
+ * details inline for the current session only — those values are never stored
+ * server-side. For saved configs, connection credentials never reach the
+ * browser: the backend resolves them from the named config and performs the
  * search server-side.
+ *
+ * Takes no props; all state is internal. Mount it directly for the
+ * `elasticsearch_data` phase.
+ *
+ * @example
+ * import { ElasticsearchDataView } from './components';
+ *
+ * case 'elasticsearch_data':
+ *   return (
+ *     <PageSection>
+ *       <ElasticsearchDataView />
+ *     </PageSection>
+ *   );
  */
 export function ElasticsearchDataView() {
   const { showError } = useNotifications();
@@ -120,6 +154,7 @@ export function ElasticsearchDataView() {
   const [startDate, setStartDate] = useState(isoDate(10));
   const [endDate, setEndDate] = useState(isoDate(0));
   const [documents, setDocuments] = useState<TelemetryDocument[]>([]);
+  const [stats, setStats] = useState<TelemetryStats | null>(null);
   const [loadingConfigs, setLoadingConfigs] = useState(true);
   const [querying, setQuerying] = useState(false);
   const [hasQueried, setHasQueried] = useState(false);
@@ -146,6 +181,7 @@ export function ElasticsearchDataView() {
   const invalidateResults = useCallback(() => {
     latestRequestId.current += 1;
     setDocuments([]);
+    setStats(null);
     setHasQueried(false);
     setQuerying(false);
   }, []);
@@ -212,6 +248,7 @@ export function ElasticsearchDataView() {
       // Ignore responses superseded by a newer run or by a criteria change.
       if (latestRequestId.current !== requestId) return;
       setDocuments(result.documents || []);
+      setStats(result.stats ?? null);
       setHasQueried(true);
     } catch (err) {
       if (latestRequestId.current !== requestId) return;
@@ -271,68 +308,103 @@ export function ElasticsearchDataView() {
   const handleCreateConfig = async (
     data: CreateElasticsearchConfigRequest | UpdateElasticsearchConfigRequest,
   ) => {
+    // Creating a shared saved config is an administrator-only operation, matching
+    // the Settings > Elasticsearch tab boundary. Guard the submit path so the
+    // role check cannot be bypassed even if a create control is reached.
+    if (!isAdmin) {
+      showError('Not authorized', 'Only administrators can add Elasticsearch configs');
+      return;
+    }
     const createReq = data as CreateElasticsearchConfigRequest;
     await elasticsearchApi.createConfig(createReq);
     setShowCreateModal(false);
     await fetchConfigs();
     setSelectedConfig(createReq.name);
+    // Switching config must clear results from the prior config and invalidate
+    // any in-flight request, matching the selector's onChange behavior.
+    invalidateResults();
   };
+
+  // Job stats summary shown once a query has committed results. Rendered above
+  // the results table in both the saved-config and inline paths.
+  const statsSection = hasQueried && !querying && stats && (
+    <div style={{ marginTop: '1.5rem' }}>
+      <JobStatsSummary
+        stats={{
+          // Whole matched window: response.total counts only the returned page.
+          totalJobs: stats.pass + stats.fail,
+          succeededJobs: stats.pass,
+          failedJobs: stats.fail,
+        }}
+        labels={{ total: 'Total Runs', succeeded: 'Passed', failed: 'Failed', passRate: 'Pass Rate' }}
+        subTexts={{
+          total: 'Runs across matched window',
+          succeeded: 'status = true',
+          failed: 'status = false',
+          passRate: 'Percentage of runs that passed',
+        }}
+      />
+    </div>
+  );
 
   // Shared results region: spinner while querying, an info prompt before the
   // first run, an empty state when a query returned nothing, or the table.
   const resultsSection = (
-    <div style={{ marginTop: '1.5rem' }}>
-      {querying ? (
-        <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <Spinner size="lg" />
-        </div>
-      ) : !hasQueried ? (
-        <Alert
-          variant="info"
-          isInline
-          title="Run a query to view telemetry data."
-        />
-      ) : documents.length === 0 ? (
-        <EmptyState>
-          <EmptyStateIcon icon={DatabaseIcon} />
-          <Title headingLevel="h3" size="md">No telemetry documents found</Title>
-          <EmptyStateBody>
-            The telemetry index returned no results.
-          </EmptyStateBody>
-        </EmptyState>
-      ) : (
-        <Table isStriped={true} aria-label="Telemetry documents">
-          <Thead>
-            <Tr>
-              <Th>UUID</Th>
-              <Th>Scenario Type</Th>
-              <Th>Start Time</Th>
-              <Th>End Time</Th>
-              <Th>Namespace</Th>
-              <Th>Status</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
-            {documents.map((doc, idx) => (
-              <Tr key={doc.run_uuid || idx}>
-                <Td dataLabel="UUID">
-                  <code>{doc.run_uuid ? doc.run_uuid.slice(0, 7) : '—'}</code>
-                </Td>
-                <Td dataLabel="Scenario Type">{doc.scenario_type || '—'}</Td>
-                <Td dataLabel="Start Time">{formatTimestamp(doc.start_timestamp)}</Td>
-                <Td dataLabel="End Time">{formatTimestamp(doc.end_timestamp)}</Td>
-                <Td dataLabel="Namespace">{doc.namespace || '—'}</Td>
-                <Td dataLabel="Status">
-                  <Label color={doc.status ? 'green' : 'red'}>
-                    {doc.status ? 'Pass' : 'Fail'}
-                  </Label>
-                </Td>
+    <>
+      {statsSection}
+      <div style={{ marginTop: '1.5rem' }}>
+        {querying ? (
+          <div style={{ textAlign: 'center', padding: '2rem' }}>
+            <Spinner size="lg" />
+          </div>
+        ) : !hasQueried ? (
+          <Alert
+            variant="info"
+            isInline
+            title="Run a query to view telemetry data."
+          />
+        ) : documents.length === 0 ? (
+          <EmptyState>
+            <EmptyStateIcon icon={DatabaseIcon} />
+            <Title headingLevel="h3" size="md">No telemetry documents found</Title>
+            <EmptyStateBody>
+              The telemetry index returned no results.
+            </EmptyStateBody>
+          </EmptyState>
+        ) : (
+          <Table isStriped={true} aria-label="Telemetry documents">
+            <Thead>
+              <Tr>
+                <Th>UUID</Th>
+                <Th>Scenario Type</Th>
+                <Th>Start Time</Th>
+                <Th>End Time</Th>
+                <Th>Namespace</Th>
+                <Th>Status</Th>
               </Tr>
-            ))}
-          </Tbody>
-        </Table>
-      )}
-    </div>
+            </Thead>
+            <Tbody>
+              {documents.map((doc, idx) => (
+                <Tr key={doc.run_uuid || idx}>
+                  <Td dataLabel="UUID">
+                    <code>{doc.run_uuid ? doc.run_uuid.slice(0, 7) : '—'}</code>
+                  </Td>
+                  <Td dataLabel="Scenario Type">{doc.scenario_type || '—'}</Td>
+                  <Td dataLabel="Start Time">{formatTimestamp(doc.start_timestamp)}</Td>
+                  <Td dataLabel="End Time">{formatTimestamp(doc.end_timestamp)}</Td>
+                  <Td dataLabel="Namespace">{doc.namespace || '—'}</Td>
+                  <Td dataLabel="Status">
+                    <Label color={doc.status ? 'green' : 'red'}>
+                      {doc.status ? 'Pass' : 'Fail'}
+                    </Label>
+                  </Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        )}
+      </div>
+    </>
   );
 
   // Date-range and max-results controls shared by the saved-config and inline
@@ -344,7 +416,7 @@ export function ElasticsearchDataView() {
           <DatePicker
             id="es-data-start-date"
             value={startDate}
-            onChange={(_event, str) => { setStartDate(str); invalidateResults(); }}
+            onChange={(_event, str, date) => { setStartDate(parseDateInput(str, date)); invalidateResults(); }}
             aria-label="Start date"
           />
         </FormGroup>
@@ -355,7 +427,7 @@ export function ElasticsearchDataView() {
           <DatePicker
             id="es-data-end-date"
             value={endDate}
-            onChange={(_event, str) => { setEndDate(str); invalidateResults(); }}
+            onChange={(_event, str, date) => { setEndDate(parseDateInput(str, date)); invalidateResults(); }}
             aria-label="End date"
           />
         </FormGroup>
@@ -522,11 +594,13 @@ export function ElasticsearchDataView() {
                   </Button>
                   </FormGroup>
                 </FlexItem>
-                <FlexItem>
-                  <Button variant="link" icon={<PlusCircleIcon />} onClick={() => setShowCreateModal(true)}>
-                    Add new config
-                  </Button>
-                </FlexItem>
+                {isAdmin && (
+                  <FlexItem>
+                    <Button variant="link" icon={<PlusCircleIcon />} onClick={() => setShowCreateModal(true)}>
+                      Add new config
+                    </Button>
+                  </FlexItem>
+                )}
               </Flex>
 
               {resultsSection}
@@ -535,17 +609,19 @@ export function ElasticsearchDataView() {
         </CardBody>
       </Card>
 
-      <Modal
-        variant={ModalVariant.medium}
-        title="Add Elasticsearch Config"
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-      >
-        <ElasticsearchConfigForm
-          onSubmit={handleCreateConfig}
-          onCancel={() => setShowCreateModal(false)}
-        />
-      </Modal>
+      {isAdmin && (
+        <Modal
+          variant={ModalVariant.medium}
+          title="Add Elasticsearch Config"
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+        >
+          <ElasticsearchConfigForm
+            onSubmit={handleCreateConfig}
+            onCancel={() => setShowCreateModal(false)}
+          />
+        </Modal>
+      )}
     </>
   );
 }
