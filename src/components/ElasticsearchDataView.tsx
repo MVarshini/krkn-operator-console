@@ -665,6 +665,7 @@ export function ElasticsearchDataView() {
           <Table isStriped={true} aria-label="Telemetry documents">
             <Thead>
               <Tr>
+                <Th screenReaderText="Row expansion" />
                 <Th>UUID</Th>
                 <Th>Scenario Type</Th>
                 <Th>Start Time</Th>
@@ -673,24 +674,88 @@ export function ElasticsearchDataView() {
                 <Th>Status</Th>
               </Tr>
             </Thead>
-            <Tbody>
-              {documents.map((doc, idx) => (
-                <Tr key={doc.run_uuid || idx}>
-                  <Td dataLabel="UUID">
-                    <code>{doc.run_uuid ? doc.run_uuid.slice(0, 7) : '—'}</code>
-                  </Td>
-                  <Td dataLabel="Scenario Type">{doc.scenario_type || '—'}</Td>
-                  <Td dataLabel="Start Time">{formatTimestamp(doc.start_timestamp)}</Td>
-                  <Td dataLabel="End Time">{formatTimestamp(doc.end_timestamp)}</Td>
-                  <Td dataLabel="Namespace">{doc.namespace || '—'}</Td>
-                  <Td dataLabel="Status">
-                    <Label color={doc.status ? 'green' : 'red'}>
-                      {doc.status ? 'Pass' : 'Fail'}
-                    </Label>
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
+            {documents.map((doc, rowIndex) => {
+              const rowKey = doc.run_uuid || String(rowIndex);
+              const isExpanded = !!expandedRows[rowKey];
+              const hasMetadata = doc.metadata !== undefined && doc.metadata !== null;
+              const hasPodDisruption = (doc.scenarios ?? []).some(
+                s => s.scenario_type === POD_DISRUPTION_TYPE && s.affected_pods
+              );
+              const isExpandable = hasMetadata || hasPodDisruption;
+              return (
+                <Tbody key={rowKey} isExpanded={isExpanded}>
+                  <Tr>
+                    {isExpandable ? (
+                      <Td
+                        expand={{
+                          rowIndex,
+                          isExpanded,
+                          onToggle: () =>
+                            setExpandedRows((prev) => ({ ...prev, [rowKey]: !prev[rowKey] })),
+                          expandId: `es-row-${rowKey}`,
+                        }}
+                      />
+                    ) : (
+                      <Td />
+                    )}
+                    <Td dataLabel="UUID">
+                      <code>{doc.run_uuid ? doc.run_uuid.slice(0, 7) : '—'}</code>
+                    </Td>
+                    <Td dataLabel="Scenario Type">{doc.scenario_type || '—'}</Td>
+                    <Td dataLabel="Start Time">{formatTimestamp(doc.start_timestamp)}</Td>
+                    <Td dataLabel="End Time">{formatTimestamp(doc.end_timestamp)}</Td>
+                    <Td dataLabel="Namespace">{doc.namespace || '—'}</Td>
+                    <Td dataLabel="Status">
+                      <Label color={doc.status ? 'green' : 'red'}>
+                        {doc.status ? 'Pass' : 'Fail'}
+                      </Label>
+                    </Td>
+                  </Tr>
+                  {isExpandable && (
+                    <Tr isExpanded={isExpanded}>
+                      <Td dataLabel="Run details" colSpan={7}>
+                        <ExpandableRowContent>
+                          <Grid hasGutter>
+                            <GridItem span={6}>
+                              <Card>
+                                <CardTitle style={{ borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                                  Cluster Config
+                                </CardTitle>
+                                <CardBody style={{ padding: 0 }}>
+                                  <ClusterConfigTable doc={doc} />
+                                </CardBody>
+                              </Card>
+                            </GridItem>
+                            <GridItem span={6}>
+                              <Card>
+                                <CardTitle style={{ borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                                  Node summary
+                                </CardTitle>
+                                <CardBody style={{ padding: 0 }}>
+                                  <NodeSummaryTable metadata={doc.metadata} />
+                                </CardBody>
+                              </Card>
+                              {(doc.scenarios ?? []).map((scenario) =>
+                                scenario.scenario_type === POD_DISRUPTION_TYPE ? (
+                                  <Card key={scenario.scenario_type}>
+                                    <CardTitle style={{ borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
+                                      Pod-Recovery Analysis
+                                    </CardTitle>
+                                    <CardBody style={{ padding: 0 }}>
+                                      <PodRecoveryChart scenario={scenario} />
+                                    </CardBody>
+                                  </Card>
+                                ) : null
+                              )}
+                            </GridItem>
+                          </Grid>
+                        </ExpandableRowContent>
+                      </Td>
+                    </Tr>
+                  )}
+                </Tbody>
+              );
+            })}
           </Table>
         )}
       </div>
@@ -894,90 +959,6 @@ export function ElasticsearchDataView() {
               </Flex>
 
               {resultsSection}
-                        <Th>End Time</Th>
-                        <Th>Namespace</Th>
-                        <Th>Status</Th>
-                      </Tr>
-                    </Thead>
-                    {documents.map((doc, rowIndex) => {
-                      const rowKey = doc.run_uuid || String(rowIndex);
-                      const isExpanded = !!expandedRows[rowKey];
-                      return (
-                        <Tbody key={rowKey} isExpanded={isExpanded}>
-                          <Tr>
-                            <Td
-                              expand={{
-                                rowIndex,
-                                isExpanded,
-                                onToggle: () =>
-                                  setExpandedRows((prev) => ({ ...prev, [rowKey]: !prev[rowKey] })),
-                                expandId: `es-row-${rowKey}`,
-                              }}
-                            />
-                            <Td dataLabel="UUID">
-                              <code>{doc.run_uuid ? doc.run_uuid.slice(0, 7) : '—'}</code>
-                            </Td>
-                            <Td dataLabel="Scenario Type">{doc.scenario_type || '—'}</Td>
-                            <Td dataLabel="Start Time">{formatTimestamp(doc.start_timestamp)}</Td>
-                            <Td dataLabel="End Time">{formatTimestamp(doc.end_timestamp)}</Td>
-                            <Td dataLabel="Namespace">{doc.namespace || '—'}</Td>
-                            <Td dataLabel="Status">
-                              <Label color={doc.status ? 'green' : 'red'}>
-                                {doc.status ? 'Pass' : 'Fail'}
-                              </Label>
-                            </Td>
-                          </Tr>
-                          <Tr isExpanded={isExpanded}>
-                            
-                            <Td dataLabel="Run details" colSpan={6}>
-                              <ExpandableRowContent>
-                                <Grid hasGutter>
-                                  <GridItem span={6}>
-                                    <Card>
-                                      <CardTitle style={{  borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
-                                        Cluster Config
-                                      </CardTitle>
-                                      <CardBody style={{ padding: 0 }}>                                      
-                                        <ClusterConfigTable doc={doc} />
-                                      </CardBody>
-                                    </Card>
-                                   
-                                  </GridItem>
-                                  <GridItem span={6}>
-                                     <Card>
-                                      <CardTitle style={{ borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
-                                        Node summary
-                                      </CardTitle>
-                                      <CardBody style={{ padding: 0 }}>
-                                        <NodeSummaryTable metadata={doc.metadata} />
-                                      </CardBody>
-                                    </Card>
-                                    {(doc.scenarios ?? []).map((scenario) =>
-                                    scenario.scenario_type === POD_DISRUPTION_TYPE ? (
-                                    
-                                        <Card>
-                                          <CardTitle style={{ borderBottom: '1px solid var(--pf-global--BorderColor--100)' }}>
-                                            Pod-Recovery Analysis
-                                          </CardTitle>
-                                          <CardBody style={{ padding: 0 }}>
-                                            <PodRecoveryChart scenario={scenario} />
-                                          </CardBody>
-                                        </Card>
-                                     
-                                    ) : null,
-                                  )}
-                                  </GridItem>
-                                  
-                                </Grid>
-                              </ExpandableRowContent>
-                            </Td>
-                          </Tr>
-                        </Tbody>
-                      );
-                    })}
-                  </Table>
-                )}
-              </div>
             </>
           )}
         </CardBody>

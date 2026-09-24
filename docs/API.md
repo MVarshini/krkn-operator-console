@@ -426,6 +426,54 @@ Retrieves telemetry documents from Elasticsearch for a given time range. Support
 }
 ```
 
+**Example (curl with saved config):**
+```bash
+curl -X POST http://localhost:8080/api/v1/elasticsearch-query \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "configName": "my-es-config",
+    "size": 100,
+    "startDate": "2024-01-01",
+    "endDate": "2024-01-31"
+  }'
+```
+
+**Example (JavaScript with inline connection):**
+```javascript
+const response = await fetch('http://localhost:8080/api/v1/elasticsearch-query', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({
+    inline: {
+      host: 'https://es.example.com',
+      port: 9200,
+      username: 'myuser',
+      password: 'mypassword',
+      telemetryIndex: 'krkn-telemetry'
+    },
+    size: 50,
+    startDate: '2024-01-01',
+    endDate: '2024-01-31'
+  })
+});
+
+if (response.ok) {
+  const data = await response.json();
+  console.log(`Found ${data.total} telemetry runs`);
+  console.log(`Pass rate: ${data.stats.pass_percent}%`);
+  data.documents.forEach(doc => {
+    console.log(`Run ${doc.run_uuid}: ${doc.status ? 'PASS' : 'FAIL'}`);
+  });
+} else {
+  const error = await response.json();
+  console.error('Query failed:', error.error);
+}
+```
+
 **Request Fields:**
 - `configName` (string, optional) - Name of saved Elasticsearch config. Mutually exclusive with `inline`.
 - `inline` (object, optional) - Ephemeral connection details. Mutually exclusive with `configName`.
@@ -450,7 +498,7 @@ Retrieves telemetry documents from Elasticsearch for a given time range. Support
   "documents": [
     {
       "run_uuid": "abc-123-def",
-      "scenario_type": "pod_scenarios",
+      "scenario_type": "pod_disruption_scenarios",
       "start_timestamp": 1704067200,
       "end_timestamp": 1704070800,
       "namespace": "default",
@@ -483,7 +531,7 @@ Retrieves telemetry documents from Elasticsearch for a given time range. Support
       },
       "scenarios": [
         {
-          "scenario_type": "pod_scenarios",
+          "scenario_type": "pod_disruption_scenarios",
           "start_timestamp": 1704067200,
           "end_timestamp": 1704070800,
           "exit_status": 0,
