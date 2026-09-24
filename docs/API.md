@@ -505,6 +505,7 @@ if (response.ok) {
       "status": true,
       "metadata": {
         "cluster_version": "4.14.0",
+        "major_version": "4.14",
         "cloud_infrastructure": "AWS",
         "cloud_type": "aws",
         "total_node_count": 6,
@@ -512,6 +513,8 @@ if (response.ok) {
         "fips_enabled": false,
         "etcd_encryption_enabled": true,
         "ipsec_enabled": false,
+        "build_url": "https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/12345",
+        "tag": "ci-4.14-upgrade",
         "kubernetes_objects_count": {
           "Pod": 150,
           "Service": 45,
@@ -572,16 +575,19 @@ if (response.ok) {
   - `namespace` (string) - Target namespace
   - `status` (boolean) - Run outcome (true=pass, false=fail)
   - `metadata` (object, optional) - Cluster/infrastructure details
-    - `cluster_version` (string) - Kubernetes/OpenShift version
-    - `cloud_infrastructure` (string) - Infrastructure provider
-    - `cloud_type` (string) - Cloud provider type
-    - `total_node_count` (integer) - Total nodes in cluster
-    - `network_plugins` (array of strings) - Network plugins
-    - `fips_enabled` (boolean) - FIPS mode status
-    - `etcd_encryption_enabled` (boolean) - Etcd encryption status
-    - `ipsec_enabled` (boolean) - IPsec status
-    - `kubernetes_objects_count` (object) - Object counts by kind
-    - `node_summary_infos` (array) - Node group summaries
+    - `cluster_version` (string, optional) - Kubernetes/OpenShift version
+    - `major_version` (string, optional) - Major version number
+    - `cloud_infrastructure` (string, optional) - Infrastructure provider
+    - `cloud_type` (string, optional) - Cloud provider type
+    - `total_node_count` (integer, optional) - Total nodes in cluster
+    - `network_plugins` (array of strings, optional) - Network plugins
+    - `fips_enabled` (boolean, optional) - FIPS mode status
+    - `etcd_encryption_enabled` (boolean, optional) - Etcd encryption status
+    - `ipsec_enabled` (boolean, optional) - IPsec status
+    - `build_url` (string, optional) - Build/CI job URL
+    - `tag` (string, optional) - Build tag or identifier
+    - `kubernetes_objects_count` (object, optional) - Object counts by kind
+    - `node_summary_infos` (array, optional) - Node group summaries
       - `count` (integer) - Nodes in group
       - `nodes_type` (string) - Node role
       - `architecture` (string) - CPU architecture
