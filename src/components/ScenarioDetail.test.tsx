@@ -20,6 +20,12 @@ import type {
 vi.mock('../services/operatorApi');
 vi.mock('../services/elasticsearchApi');
 vi.mock('../services/cloudCredentialsApi');
+vi.mock('../services/signatureVerificationApi', () => ({
+  signatureVerificationApi: {
+    getSettings: vi.fn().mockResolvedValue({ enabled: true }),
+    updateSettings: vi.fn(),
+  },
+}));
 
 describe('ScenarioDetail', () => {
   const mockDispatch = vi.fn();
@@ -115,7 +121,7 @@ describe('ScenarioDetail', () => {
     providerConfigData: null,
     rerunIntent: null,
     startInPreview: false,
-    rerunScenarioImage: null,
+    rerunScenario: null,
     rerunKubeconfigPath: null,
     notifications: [],
   };
@@ -832,8 +838,7 @@ describe('ScenarioDetail', () => {
             targetClusters: {
               'krkn-operator': ['cluster1'],
             },
-            scenarioImage: 'krkn-hub:pod-scenarios',
-            scenarioName: 'pod-scenarios',
+            scenario: { name: 'pod-scenarios', private: false },
             environment: expect.objectContaining({
               NAMESPACE: 'default',
               KILL_COUNT: '5',
@@ -843,7 +848,7 @@ describe('ScenarioDetail', () => {
       });
     });
 
-    it('should build correct scenario image for private registry', async () => {
+    it('should build correct scenario reference for private registry', async () => {
       const user = userEvent.setup();
       vi.mocked(operatorApi.runScenario).mockResolvedValueOnce(mockCreateResponse);
       vi.mocked(operatorApi.getScenarioRunStatus).mockResolvedValueOnce(mockStatusResponse);
@@ -873,11 +878,80 @@ describe('ScenarioDetail', () => {
       await waitFor(() => {
         expect(operatorApi.runScenario).toHaveBeenCalledWith(
           expect.objectContaining({
-            scenarioImage: 'pod-scenarios', // Private registry: no krkn-hub prefix
-            registryName: 'corp-registry',
+            scenario: { name: 'pod-scenarios', private: true, registryName: 'corp-registry' },
           })
         );
       });
+    });
+
+    it('should preserve the scenario reference when rerunning', async () => {
+      const user = userEvent.setup();
+      vi.mocked(operatorApi.runScenario).mockResolvedValueOnce(mockCreateResponse);
+      vi.mocked(operatorApi.getScenarioRunStatus).mockResolvedValueOnce(mockStatusResponse);
+      vi.mocked(operatorApi.getActiveRuns).mockResolvedValueOnce(mockActiveRuns);
+
+      renderWithContext({
+        rerunScenario: { name: 'pod-scenarios', private: true, registryName: 'rerun-registry' },
+        scenarios: [{ name: 'pod-scenarios', signature_status: 'signed' }],
+        scenarioFormValues: { NAMESPACE: 'default' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /Preview Configuration/i }));
+      await user.click(screen.getByRole('button', { name: /Run Scenarios/i }));
+
+      await waitFor(() => {
+        expect(operatorApi.runScenario).toHaveBeenCalledWith(
+          expect.objectContaining({
+            scenario: { name: 'pod-scenarios', private: true, registryName: 'rerun-registry' },
+          })
+        );
+      });
+    });
+
+    it('allows a signed rerun when the scenario list was not loaded', async () => {
+      const user = userEvent.setup();
+      vi.mocked(operatorApi.getScenarios).mockResolvedValueOnce({
+        scenarios: [{ name: 'pod-scenarios', signature_status: 'signed' }],
+      });
+      vi.mocked(operatorApi.runScenario).mockResolvedValueOnce(mockCreateResponse);
+      vi.mocked(operatorApi.getScenarioRunStatus).mockResolvedValueOnce(mockStatusResponse);
+      vi.mocked(operatorApi.getActiveRuns).mockResolvedValueOnce(mockActiveRuns);
+
+      renderWithContext({
+        rerunScenario: { name: 'pod-scenarios', private: false },
+        scenarios: null,
+        scenarioFormValues: { NAMESPACE: 'default' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /Preview Configuration/i }));
+      await user.click(screen.getByRole('button', { name: /Run Scenarios/i }));
+
+      await waitFor(() => {
+        expect(operatorApi.getScenarios).toHaveBeenCalledWith({});
+        expect(operatorApi.runScenario).toHaveBeenCalled();
+      });
+    });
+
+    it('blocks an unsigned rerun when the scenario list was not loaded', async () => {
+      const user = userEvent.setup();
+      vi.mocked(operatorApi.getScenarios).mockResolvedValueOnce({
+        scenarios: [{ name: 'pod-scenarios', signature_status: 'unsigned' }],
+      });
+      vi.mocked(operatorApi.runScenario).mockResolvedValueOnce(mockCreateResponse);
+
+      renderWithContext({
+        rerunScenario: { name: 'pod-scenarios', private: false },
+        scenarios: null,
+        scenarioFormValues: { NAMESPACE: 'default' },
+      });
+
+      await user.click(screen.getByRole('button', { name: /Preview Configuration/i }));
+      await user.click(screen.getByRole('button', { name: /Run Scenarios/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('This scenario cannot run because its image signature is not verified.')).toBeInTheDocument();
+      });
+      expect(operatorApi.runScenario).not.toHaveBeenCalled();
     });
 
     it('should dispatch scenario run created action', async () => {

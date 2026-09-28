@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Card,
   CardBody,
@@ -19,8 +19,10 @@ import {
   FlexItem,
   ActionGroup,
   Spinner,
+  Tooltip,
+  Alert,
 } from '@patternfly/react-core';
-import { TopologyIcon } from '@patternfly/react-icons';
+import { DisconnectedIcon, TopologyIcon } from '@patternfly/react-icons';
 import type { Cluster, SelectedCluster } from '../types/api';
 
 interface ClusterMultiSelectorProps {
@@ -40,6 +42,19 @@ export function ClusterMultiSelector({
   onCancel,
   showActions = true,
 }: ClusterMultiSelectorProps) {
+  const [removedOfflineClusterNames, setRemovedOfflineClusterNames] = useState<string[]>([]);
+  const formatCheckedAt = (checkedAt?: string): string => {
+    if (!checkedAt) return 'unknown';
+
+    const date = new Date(checkedAt);
+    if (Number.isNaN(date.getTime())) return checkedAt;
+
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date);
+  };
+
   // Helper to check if a cluster is selected
   const isSelected = (operatorName: string, clusterName: string): boolean => {
     return selectedClusters.some(
@@ -54,6 +69,8 @@ export function ClusterMultiSelector({
     const flatList: SelectedCluster[] = [];
     Object.entries(clusters).forEach(([operatorName, clusterList]) => {
       clusterList.forEach((cluster) => {
+        if (cluster.online === false) return;
+
         flatList.push({
           operatorName,
           clusterName: cluster['cluster-name'],
@@ -63,6 +80,28 @@ export function ClusterMultiSelector({
     });
     return flatList;
   }, [clusters]);
+
+  const selectedOfflineClusters = useMemo(() => {
+    if (!clusters) return [];
+    const offline = new Set(
+      Object.entries(clusters)
+        .flatMap(([operatorName, clusterList]) =>
+          clusterList
+            .filter((cluster) => cluster.online === false)
+            .map((cluster) => `${operatorName}\u0000${cluster['cluster-name']}`)
+        )
+    );
+    return selectedClusters.filter((cluster) => offline.has(`${cluster.operatorName}\u0000${cluster.clusterName}`));
+  }, [clusters, selectedClusters]);
+
+  useEffect(() => {
+    if (selectedOfflineClusters.length > 0) {
+      setRemovedOfflineClusterNames((previous) => [
+        ...new Set([...previous, ...selectedOfflineClusters.map((cluster) => cluster.clusterName)]),
+      ]);
+    }
+    selectedOfflineClusters.forEach((cluster) => onToggle(cluster));
+  }, [onToggle, selectedOfflineClusters]);
 
   const handleSelectAll = () => {
     allClusters.forEach((cluster) => {
@@ -151,9 +190,15 @@ export function ClusterMultiSelector({
                   {clusterList.map((cluster) => {
                     const clusterId = `${operatorName}-${cluster['cluster-name']}`;
                     const checked = isSelected(operatorName, cluster['cluster-name']);
+                    const isOffline = cluster.online === false;
+                    const offlineMessage = `Cluster is offline. Last checked: ${formatCheckedAt(cluster['checked-at'])}.`;
 
                     return (
-                      <DataListItem key={clusterId} aria-labelledby={clusterId}>
+                      <DataListItem
+                        key={clusterId}
+                        aria-labelledby={clusterId}
+                        style={isOffline ? { opacity: 0.55 } : undefined}
+                      >
                         <DataListItemRow>
                           <DataListItemCells
                             dataListCells={[
@@ -161,8 +206,9 @@ export function ClusterMultiSelector({
                                 <Checkbox
                                   id={clusterId}
                                   isChecked={checked}
+                                  isDisabled={isOffline}
                                   onChange={() =>
-                                    onToggle({
+                                    !isOffline && onToggle({
                                       operatorName,
                                       clusterName: cluster['cluster-name'],
                                       clusterApiUrl: cluster['cluster-api-url'],
@@ -172,6 +218,16 @@ export function ClusterMultiSelector({
                                     <div>
                                       <div style={{ fontWeight: 'bold' }}>
                                         {cluster['cluster-name']}
+                                        {isOffline && (
+                                          <Tooltip content={offlineMessage} position="top">
+                                            <span
+                                              aria-label={offlineMessage}
+                                              style={{ marginLeft: '0.5rem', color: 'var(--pf-v5-global--danger-color--100)' }}
+                                            >
+                                              <DisconnectedIcon />
+                                            </span>
+                                          </Tooltip>
+                                        )}
                                       </div>
                                       <div
                                         style={{
@@ -195,6 +251,17 @@ export function ClusterMultiSelector({
               </CardBody>
             </Card>
           ))}
+
+          {removedOfflineClusterNames.length > 0 && (
+            <Alert
+              variant="warning"
+              isInline
+              title="Offline clusters removed from this selection"
+              style={{ marginTop: '1rem' }}
+            >
+              {removedOfflineClusterNames.join(', ')} is offline and cannot be included in the run.
+            </Alert>
+          )}
 
           {showActions && (
             <Flex style={{ marginTop: '1.5rem', gap: '2rem' }}>
