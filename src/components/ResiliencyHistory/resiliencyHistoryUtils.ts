@@ -1,4 +1,8 @@
-import type { ResiliencyHistoryDataPoint, ResiliencyHistoryQueryResponse } from '../../types/api';
+import type {
+  ResiliencyHistoryConfigurationGroup,
+  ResiliencyHistoryDataPoint,
+  ResiliencyHistoryQueryResponse,
+} from '../../types/api';
 
 export type ResiliencyHistoryChartMode = 'separate' | 'collapsed';
 
@@ -43,12 +47,25 @@ function formatDate(value: string): string {
     : date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 }
 
-/** Builds a compact point label; the chart title and legend provide shared context. */
+/** Builds a complete accessible point label, including baseline comparison details. */
 export function formatResiliencyHistoryTooltip(
   point: ResiliencyHistoryDataPoint,
   clusterName: string,
+  categoryName?: string,
+  configurationGroup?: ResiliencyHistoryConfigurationGroup,
 ): string {
-  const details = [`Score ${point.score}`];
+  const details = [
+    `Date: ${formatDate(point.date)}`,
+    `Score: ${point.score}`,
+    `Cluster: ${clusterName}`,
+  ];
+  if (categoryName) details.push(`Category: ${categoryName}`);
+  details.push(`Run: ${point.runId}`, `Run type: ${point.runType}`);
+  if (point.providerName) details.push(`Provider: ${point.providerName}`);
+  details.push(`Configuration group: ${point.configurationGroupId}`);
+  if (configurationGroup?.scenarioNames?.length) {
+    details.push(`Scenarios: ${configurationGroup.scenarioNames.join(', ')}`);
+  }
   if (typeof point.baseline === 'number' && Number.isFinite(point.baseline)) {
     const delta = point.score - point.baseline;
     const signedDelta = delta === 0 ? '+0' : delta > 0 ? `+${delta}` : `−${Math.abs(delta)}`;
@@ -56,7 +73,6 @@ export function formatResiliencyHistoryTooltip(
     details.push(`Δ ${signedDelta}`);
     details.push(delta >= 0 ? 'Met baseline' : 'Below baseline');
   }
-  details.push(clusterName, formatDate(point.date), point.runId);
   return details.join(' · ');
 }
 
@@ -95,7 +111,12 @@ function buildSeries(
         date: point.date,
         runId: point.runId,
         ...(point.baseline !== undefined ? { baseline: point.baseline } : {}),
-        tooltip: formatResiliencyHistoryTooltip(point, displayName),
+        tooltip: formatResiliencyHistoryTooltip(
+          point,
+          displayName,
+          categoryName,
+          response.configurationGroups[categoryName]?.[point.configurationGroupId],
+        ),
       }));
 
     return { clusterName: displayName, data };

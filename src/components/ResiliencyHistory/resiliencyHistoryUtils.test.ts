@@ -152,7 +152,7 @@ describe('resiliency history chart data', () => {
     expect(charts[0].configurationProfileName).toBeUndefined();
   });
 
-  it('keeps point tooltips compact while identifying the cluster, date, and run', () => {
+  it('includes run, category, provider, and configuration details in accessible point tooltips', () => {
     const label = formatResiliencyHistoryTooltip(
       point({
         runId: 'run-1',
@@ -161,25 +161,32 @@ describe('resiliency history chart data', () => {
         providerName: 'aws',
       }),
       'cluster-a',
+      'alpha',
+      { runType: 'scenario-runs', representativeRunId: 'run-1', scenarioNames: ['pod-kill'] },
     );
 
-    expect(label).toContain('Score 0');
-    expect(label).toContain('cluster-a');
-    expect(label).toContain('run-1');
-    expect(label).not.toContain('Provider');
-    expect(label).not.toContain('Configuration group');
+    expect(label).toContain('Score: 0');
+    expect(label).toContain('Cluster: cluster-a');
+    expect(label).toContain('Category: alpha');
+    expect(label).toContain('Run: run-1');
+    expect(label).toContain('Run type: scenario-runs');
+    expect(label).toContain('Provider: aws');
+    expect(label).toContain('Configuration group: config-1');
+    expect(label).toContain('Scenarios: pod-kill');
   });
 
   it('formats a baseline tooltip without dropping run metadata', () => {
     const label = formatResiliencyHistoryTooltip(
       point({ runId: 'run-with-baseline', configurationGroupId: 'config-1', score: 70, baseline: 80 }),
       'cluster-a',
+      'alpha',
     );
 
     expect(label).toContain('Baseline 80');
     expect(label).toContain('Δ −10');
     expect(label).toContain('Below baseline');
     expect(label).toContain('run-with-baseline');
-    expect(label.split(' · ').length).toBe(7);
+    expect(label).toContain('Category: alpha');
+    expect(label.split(' · ').length).toBe(10);
   });
 });
