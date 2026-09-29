@@ -191,7 +191,12 @@ export function ResiliencyHistoryChart({
     .filter((baseline): baseline is number => typeof baseline === 'number' && Number.isFinite(baseline)));
   const hasBaselines = showBaselines && baselinePoints.length > 0;
   const chartIsZoomed = !isFullDomain(domain, fullDomain);
-  const visibleTitle = chart.title;
+  const configurationSuffix = chart.configurationGroupId
+    ? ` (configuration ${chart.configurationGroupId})`
+    : '';
+  const visibleTitle = configurationSuffix && chart.title.endsWith(configurationSuffix)
+    ? chart.title.slice(0, -configurationSuffix.length)
+    : chart.title;
 
   const showPointTooltip = (
     event: MouseEvent<SVGCircleElement> | FocusEvent<SVGCircleElement>,
