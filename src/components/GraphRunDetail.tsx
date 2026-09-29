@@ -28,6 +28,7 @@ import {
   Alert,
   Label,
   Tooltip,
+  Button,
 } from '@patternfly/react-core';
 import {
   HourglassHalfIcon,
@@ -35,11 +36,14 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   BanIcon,
+  DownloadIcon,
 } from '@patternfly/react-icons';
 import type { GraphRunDetail, NodeStatus, ClusterResiliencyScore, GraphClusterScore } from '../types/api';
 import { graphRunsApi } from '../services';
 import { ScenarioRunDetailModal } from './ScenarioRunDetailModal';
 import { getScoreColor, getScoreLevel, formatScore, SCORE_CALCULATING } from '../utils/resiliency';
+import { buildStudioExport } from './Studio/studioImport';
+import { downloadJson } from '../utils/downloadJson';
 
 interface GraphRunDetailProps {
   /** Name of the graph run to visualize */
@@ -736,6 +740,19 @@ export function GraphRunDetail({ graphRunName }: GraphRunDetailProps) {
   };
   const clusterScoresOverall = graphRunDetail.status.resiliencyScores;
   const specEnabled = graphRunDetail.spec.resiliencyScoreEnabled;
+  const hasGraph = Object.keys(graphRunDetail.spec.graph ?? {}).some(k => k !== '_comment');
+
+  // Export the graph run's workflow as a re-importable Chaos Studio JSON file.
+  // The run response has no canvas positions, so buildStudioExport synthesizes a
+  // studioLayout (auto-laid-out) alongside the executable graph.
+  const handleExport = () => {
+    try {
+      const payload = buildStudioExport(graphRunDetail.spec.graph, { graphRunName });
+      downloadJson(payload, `chaos-workflow-${graphRunName}-${Date.now()}.json`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to export workflow');
+    }
+  };
 
   return (
     <Card isFlat>
@@ -768,6 +785,15 @@ export function GraphRunDetail({ graphRunName }: GraphRunDetailProps) {
             </Label>
           </Tooltip>
 
+          <Button
+            variant="secondary"
+            icon={<DownloadIcon />}
+            onClick={handleExport}
+            isDisabled={!hasGraph}
+            style={{ marginLeft: 'auto' }}
+          >
+            Export JSON
+          </Button>
         </div>
 
         {/* Per-cluster resiliency score cards */}
