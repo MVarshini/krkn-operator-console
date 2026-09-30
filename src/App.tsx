@@ -22,6 +22,7 @@ import { graphRunsApi } from './services';
 import { usersApi } from './services/usersApi';
 import { useNotifications } from './hooks';
 import type { SelectedCluster, UpdateUserRequest, ChangePasswordRequest, ScenarioRunState } from './types/api';
+import { buildRerunIntent } from './utils/rerunIntent';
 
 function App() {
   const { state, dispatch } = useAppContext();
@@ -138,8 +139,8 @@ function App() {
     }
   };
 
-  const handleReplayWorkflow = (workflow: import('./types/api').StudioWorkflow) => {
-    dispatch({ type: 'OPEN_STUDIO_REPLAY', payload: { workflow } });
+  const handleReplayWorkflow = (workflow: import('./types/api').StudioWorkflow, categories?: string[]) => {
+    dispatch({ type: 'OPEN_STUDIO_REPLAY', payload: { workflow, categories } });
   };
 
   const handleCreateJob = () => {
@@ -174,24 +175,7 @@ function App() {
     try {
       const config = await operatorApi.getJobConfig(jobId);
 
-      const clusters = Object.entries(config.targetClusters).flatMap(
-        ([operatorName, clusterNames]) =>
-          clusterNames.map(clusterName => ({ operatorName, clusterName }))
-      );
-
-      dispatch({
-        type: 'RERUN_SCENARIO',
-        payload: {
-          scenario: config.scenario ?? {
-            name: config.scenarioName ?? run.scenarioName,
-            private: Boolean(run.registryName),
-            ...(run.registryName ? { registryName: run.registryName } : {}),
-          },
-          clusters,
-          environment: config.environment,
-          kubeconfigPath: config.kubeconfigPath,
-        },
-      });
+      dispatch({ type: 'RERUN_SCENARIO', payload: buildRerunIntent(config, run) });
 
       const response = await operatorApi.createTargetRequest();
       dispatch({
@@ -294,7 +278,10 @@ function App() {
       case 'studio':
         return (
           <PageSection>
-            <Studio initialWorkflow={state.studioReplayWorkflow ?? undefined} />
+            <Studio
+              initialWorkflow={state.studioReplayWorkflow ?? undefined}
+              initialCategories={state.studioReplayCategories ?? undefined}
+            />
           </PageSection>
         );
 

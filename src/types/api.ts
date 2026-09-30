@@ -132,6 +132,8 @@ export interface RerunIntent {
   clusters: { operatorName: string; clusterName: string }[];
   environment: { [key: string]: string };
   kubeconfigPath: string;
+  /** Visible category assignments restored from the run configuration. */
+  categories?: string[];
 }
 
 export interface JobConfigResponse {
@@ -144,6 +146,8 @@ export interface JobConfigResponse {
   scenarioName?: string;
   kubeconfigPath: string;
   environment: { [key: string]: string };
+  /** Categories visible to the current user and restored for replay. */
+  categories?: string[];
 }
 
 export type SignatureStatus = 'signed' | 'unsigned' | 'untrusted' | 'unknown';
@@ -282,6 +286,8 @@ export interface ScenarioRunRequest {
   maxRetries?: number;
   /** Enable resiliency score calculation for this run */
   resiliencyScoreEnabled?: boolean;
+  /** Visible category names to assign to the newly created run. */
+  categories?: string[];
 }
 
 export interface TargetJobResult {
@@ -502,6 +508,8 @@ export interface AppState {
   graphRuns: GraphRunState[];
   expandedGraphRunIds: Set<string>; // Graph run names that are expanded to show DAG
   studioReplayWorkflow?: StudioWorkflow | null;
+  /** Categories restored when opening a graph run replay in Chaos Studio. */
+  studioReplayCategories?: string[] | null;
 
   // Workflow state (create job flow)
   clusters: ClustersResponse['targetData'] | null;
@@ -521,6 +529,8 @@ export interface AppState {
 
   // Re-run workflow
   rerunIntent: RerunIntent | null;
+  /** Categories restored from a run config for a scenario replay. */
+  rerunCategories: string[];
   startInPreview: boolean;
   rerunScenario: ScenarioReference | null;
   rerunKubeconfigPath: string | null;
@@ -566,7 +576,7 @@ export type AppAction =
   | { type: 'LOAD_GRAPH_RUNS_SUCCESS'; payload: { runs: GraphRunState[] } }
   | { type: 'TOGGLE_GRAPH_RUN_ACCORDION'; payload: { graphRunName: string } }
   | { type: 'DELETE_GRAPH_RUN'; payload: { graphRunName: string } }
-  | { type: 'OPEN_STUDIO_REPLAY'; payload: { workflow: StudioWorkflow } }
+  | { type: 'OPEN_STUDIO_REPLAY'; payload: { workflow: StudioWorkflow; categories?: string[] } }
 
   // Workflow control (NEW)
   | { type: 'START_CREATE_WORKFLOW' }
@@ -967,6 +977,8 @@ export interface CreateGraphRunRequest {
   cloudCredentialRef?: string;
   /** Maximum retries after the initial attempt for each node */
   maxRetries?: number;
+  /** Visible category names to assign to the newly created graph run. */
+  categories?: string[];
 }
 
 /**
@@ -1145,6 +1157,8 @@ export interface StudioWorkflow {
 export interface StudioAutosave {
   /** Saved workflow state */
   workflow: StudioWorkflow;
+  /** Run categories selected before the workflow was saved. */
+  categories?: string[];
   /** When the autosave was created */
   timestamp: number;
   /** Autosave format version */
@@ -1306,6 +1320,8 @@ export interface WorkflowResponse {
   description?: string;
   availableToAll: boolean;
   groups?: string[];
+  /** Workflow-level category metadata, when supported by the operator API. */
+  categories?: string[];
   createdAt?: string;
   updatedAt?: string;
   createdBy?: string;
@@ -1319,6 +1335,7 @@ export interface CreateWorkflowRequest {
   description?: string;
   availableToAll: boolean;
   groups?: string[];
+  categories?: string[];
 }
 
 export interface CreateWorkflowResponse {
@@ -1333,6 +1350,7 @@ export interface UpdateWorkflowRequest {
   description?: string;
   availableToAll: boolean;
   groups?: string[];
+  categories?: string[];
 }
 
 export interface UpdateWorkflowResponse {

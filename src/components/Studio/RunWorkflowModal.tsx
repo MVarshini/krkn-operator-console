@@ -47,7 +47,13 @@ export function RunWorkflowModal({
   onSuccess,
   targetFetchState,
 }: RunWorkflowModalProps) {
-  const { exportWorkflow, workflow } = useStudioContext();
+  const {
+    exportWorkflow,
+    workflow,
+    selectedCategories = [],
+    visibleCategories = [],
+    categoryLoadStatus = 'error',
+  } = useStudioContext();
   const { showSuccess, showError } = useNotifications();
   const { enabled: signatureVerificationEnabled, error: signatureVerificationError, isLoading: signatureVerificationLoading } = useSignatureVerification();
   const [selectedClusters, setSelectedClusters] = useState<SelectedCluster[]>([]);
@@ -191,11 +197,18 @@ export function RunWorkflowModal({
       });
     }
 
+    const categories = selectedCategories.length > 0
+      ? (categoryLoadStatus === 'ready'
+        ? selectedCategories.filter((name) => visibleCategories.some((category) => category.name === name))
+        : selectedCategories)
+      : undefined;
+
     const request: CreateGraphRunRequest = {
       graph,
       targetRequestId: targetFetchState.uuid,
       targetClusters,
       maxRetries,
+      categories,
     };
 
     setIsSubmitting(true);
