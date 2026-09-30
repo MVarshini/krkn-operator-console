@@ -150,8 +150,8 @@ export type SignatureStatus = 'signed' | 'unsigned' | 'untrusted' | 'unknown';
 
 export interface ScenarioTag {
   name: string;
-  digest?: string;
   signature_status?: SignatureStatus;
+  digest?: string;
   size?: number;
   lastModified?: string;
 }
@@ -278,7 +278,7 @@ export interface ScenarioRunRequest {
   elasticsearchConfigName?: string;
   /** Name of a saved cloud credential — backend injects via SecretKeyRef at controller level */
   cloudCredentialRef?: string;
-  /** Maximum retries after the initial attempt; zero disables retries */
+  /** Maximum retries after the initial attempt for the scenario run */
   maxRetries?: number;
   /** Enable resiliency score calculation for this run */
   resiliencyScoreEnabled?: boolean;
@@ -786,6 +786,8 @@ export interface GraphScenarioNode {
   volumes?: { [key: string]: string };
   /** Node ID that this scenario depends on (parent in the graph) */
   depends_on?: string;
+  /** Positive multiplier for this scenario's resiliency score contribution */
+  resiliencyWeight?: number;
   /** Saved cloud credential to inject for this node (overrides graph-level default) */
   cloudCredentialRef?: string;
 }
@@ -963,7 +965,7 @@ export interface CreateGraphRunRequest {
   targetClusters: { [providerName: string]: string[] };
   /** Default cloud credential for all nodes (individual nodes may override) */
   cloudCredentialRef?: string;
-  /** Maximum retries after the initial attempt for each node; zero disables retries */
+  /** Maximum retries after the initial attempt for each node */
   maxRetries?: number;
 }
 
@@ -1102,6 +1104,8 @@ export interface StudioNode {
     volumes?: { [key: string]: string };
     /** File mounts (mock dropdown for now) */
     files?: string[];
+    /** Positive multiplier for this scenario's resiliency score contribution */
+    resiliencyWeight?: number;
     /** Saved cloud credential injected server-side for this node */
     cloudCredentialRef?: string;
   };
