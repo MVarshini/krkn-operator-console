@@ -828,7 +828,7 @@ export function JobsList({
                         isExpanded={isGraphExpanded}
                         id={`toggle-graph-${item.graphRunName}`}
                         aria-controls={`expand-graph-${item.graphRunName}`}
-                        style={{ display: 'flex', alignItems: 'center', marginLeft: graphCategories.length > 0 ? '0.35rem' : undefined }}
+                        style={{ display: 'flex', alignItems: 'center' }}
                       />
                       <DataListItemCells
                         dataListCells={[
@@ -987,7 +987,7 @@ export function JobsList({
                       isExpanded={isRunExpanded}
                       id={`toggle-run-${run.scenarioRunName}`}
                       aria-controls={`expand-run-${run.scenarioRunName}`}
-                      style={{ display: 'flex', alignItems: 'center', marginLeft: scenarioCategories.length > 0 ? '0.35rem' : undefined }}
+                      style={{ display: 'flex', alignItems: 'center' }}
                     />
                     <DataListItemCells
                       dataListCells={[
