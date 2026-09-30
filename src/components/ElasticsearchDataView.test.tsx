@@ -815,4 +815,272 @@ describe('ElasticsearchDataView', () => {
       expect(screen.getByText('slow-pod')).toBeInTheDocument();
     });
   });
+
+  // Response carrying facets so the faceted-filter controls render after a query.
+  // Distinct counts keep the value-option labels unambiguous in the DOM.
+  const mockResultWithFacets: QueryTelemetryResponse = {
+    ...mockQueryResult,
+    facets: {
+      scenario_type: [
+        { value: 'pod_disruption_scenarios', count: 5 },
+        { value: 'node_disruption_scenarios', count: 3 },
+      ],
+      cloud_type: [{ value: 'aws', count: 7 }],
+    },
+  };
+
+  // Runs an initial saved-config query and returns the config select for reuse.
+  const runInitialQuery = async () => {
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
+    vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue(mockResultWithFacets);
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
+    await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
+    await waitFor(() => expect(elasticsearchApi.queryTelemetry).toHaveBeenCalledTimes(1));
+  };
+
+  // Selects a category, opens the value multi-select, toggles one or more values,
+  // then closes the dropdown. The query is deferred until close, so the helper
+  // closes the dropdown to trigger the single re-query.
+  const selectFacetValue = async (categoryKey: string, optionText: string | string[]) => {
+    await userEvent.selectOptions(screen.getByLabelText('Select a filter category'), categoryKey);
+    const toggle = screen.getByRole('button', { name: /Select values/ });
+    await userEvent.click(toggle);
+    for (const text of Array.isArray(optionText) ? optionText : [optionText]) {
+      await userEvent.click(screen.getByText(text));
+    }
+    // Close the dropdown to fire the deferred query.
+    await userEvent.click(toggle);
+  };
+
+  it('re-queries with the selected facet value and renders a chip for it', async () => {
+    await runInitialQuery();
+
+    await selectFacetValue('scenario_type', 'pod_disruption_scenarios (5)');
+
+    // Selecting a value re-runs the saved-config path with the facet applied,
+    // reset to page 1 with the same page size and date bounds.
+    await waitFor(() => {
+      expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
+        'prod-es',
+        50,
+        1,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        { scenario_type: ['pod_disruption_scenarios'] },
+      );
+    });
+
+    // The applied value shows as a labeled chip.
+    expect(
+      screen.getByText('Scenario Type: pod_disruption_scenarios'),
+    ).toBeInTheDocument();
+  });
+
+  it('defers the query until the value dropdown closes, then re-queries once with all picks', async () => {
+    await runInitialQuery();
+
+    await userEvent.selectOptions(screen.getByLabelText('Select a filter category'), 'scenario_type');
+    const toggle = screen.getByRole('button', { name: /Select values/ });
+    await userEvent.click(toggle);
+
+    // Pick two values while open. No query fires yet (still only the initial run).
+    await userEvent.click(screen.getByText('pod_disruption_scenarios (5)'));
+    await userEvent.click(screen.getByText('node_disruption_scenarios (3)'));
+    expect(elasticsearchApi.queryTelemetry).toHaveBeenCalledTimes(1);
+
+    // Closing the dropdown fires exactly one query with both values.
+    await userEvent.click(toggle);
+    await waitFor(() => expect(elasticsearchApi.queryTelemetry).toHaveBeenCalledTimes(2));
+    expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
+      'prod-es',
+      50,
+      1,
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      { scenario_type: ['pod_disruption_scenarios', 'node_disruption_scenarios'] },
+    );
+  });
+
+  it('re-queries with multiple facet values across categories', async () => {
+    await runInitialQuery();
+
+    await selectFacetValue('scenario_type', 'pod_disruption_scenarios (5)');
+    await selectFacetValue('cloud_type', 'aws (7)');
+
+    // Both categories are sent together in the filter set.
+    await waitFor(() => {
+      expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
+        'prod-es',
+        50,
+        1,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        { scenario_type: ['pod_disruption_scenarios'], cloud_type: ['aws'] },
+      );
+    });
+
+    expect(screen.getByText('Scenario Type: pod_disruption_scenarios')).toBeInTheDocument();
+    expect(screen.getByText('Cloud Type: aws')).toBeInTheDocument();
+  });
+
+  it('removes a facet value via its chip and re-queries without it', async () => {
+    await runInitialQuery();
+
+    await selectFacetValue('scenario_type', 'pod_disruption_scenarios (5)');
+    await selectFacetValue('cloud_type', 'aws (7)');
+
+    // Remove the scenario_type chip; only cloud_type remains in the filter set.
+    const chip = screen.getByText('Scenario Type: pod_disruption_scenarios');
+    const chipRoot = chip.closest('.pf-v5-c-label') as HTMLElement;
+    await userEvent.click(within(chipRoot).getByRole('button'));
+
+    await waitFor(() => {
+      expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
+        'prod-es',
+        50,
+        1,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        { cloud_type: ['aws'] },
+      );
+    });
+
+    expect(screen.queryByText('Scenario Type: pod_disruption_scenarios')).not.toBeInTheDocument();
+    expect(screen.getByText('Cloud Type: aws')).toBeInTheDocument();
+  });
+
+  it('clears all facet filters and re-queries unfiltered', async () => {
+    await runInitialQuery();
+
+    await selectFacetValue('scenario_type', 'pod_disruption_scenarios (5)');
+    await selectFacetValue('cloud_type', 'aws (7)');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+
+    // Clearing sends an undefined filter set (unfiltered query) on page 1.
+    await waitFor(() => {
+      expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
+        'prod-es',
+        50,
+        1,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        undefined,
+      );
+    });
+
+    // Every chip and the clear control are gone.
+    expect(screen.queryByText('Scenario Type: pod_disruption_scenarios')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cloud Type: aws')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear all filters' })).not.toBeInTheDocument();
+  });
+
+  // Runs an initial saved-config query against a paged dataset. queryTelemetry
+  // echoes the requested size/page into the returned document's uuid so each
+  // page/size renders a distinct, truncated (first 7 chars) uuid in the table.
+  const runPagedQuery = async () => {
+    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
+    vi.mocked(elasticsearchApi.queryTelemetry).mockImplementation(async (_config, size, pageNum) => ({
+      documents: [
+        {
+          run_uuid: `s${size}p${pageNum}-rest`,
+          scenario_type: 'pod_disruption_scenarios',
+          start_timestamp: 1735689600,
+          end_timestamp: 1735689900,
+          namespace: 'default',
+          status: true,
+        },
+      ],
+      total: 120,
+      stats: { pass: 1, fail: 0, pass_percent: 100 },
+    }));
+    render(<ElasticsearchDataView />);
+
+    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
+    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
+    await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
+    // Initial page: size 50, page 1.
+    await waitFor(() => expect(screen.getByText('s50p1-r')).toBeInTheDocument());
+  };
+
+  it('re-queries the next page and renders its results', async () => {
+    await runPagedQuery();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Go to next page' })[0]);
+
+    // Next page keeps the size and filters, advancing to page 2.
+    await waitFor(() => {
+      expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
+        'prod-es',
+        50,
+        2,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        undefined,
+      );
+    });
+    // Page-2 document replaces the page-1 document.
+    expect(screen.getByText('s50p2-r')).toBeInTheDocument();
+    expect(screen.queryByText('s50p1-r')).not.toBeInTheDocument();
+  });
+
+  it('resets to page one when the page size changes', async () => {
+    await runPagedQuery();
+
+    // Advance to page 2 first so the size change must reset paging.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Go to next page' })[0]);
+    await waitFor(() => expect(screen.getByText('s50p2-r')).toBeInTheDocument());
+
+    // Open the per-page menu (toggle text is the "1 - N of 120" template) and
+    // pick 20 per page.
+    await userEvent.click(screen.getAllByRole('button', { name: /of 120/ })[0]);
+    await userEvent.click(screen.getAllByRole('menuitem', { name: '20 per page' })[0]);
+
+    // Size change re-queries at the new size and resets to page 1.
+    await waitFor(() => {
+      expect(elasticsearchApi.queryTelemetry).toHaveBeenLastCalledWith(
+        'prod-es',
+        20,
+        1,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        undefined,
+      );
+    });
+    expect(screen.getByText('s20p1-r')).toBeInTheDocument();
+    expect(screen.queryByText('s50p2-r')).not.toBeInTheDocument();
+  });
+
+  it('restores the page and keeps prior rows when a next-page re-query fails', async () => {
+    await runPagedQuery();
+
+    // The page-2 re-query fails.
+    vi.mocked(elasticsearchApi.queryTelemetry).mockRejectedValueOnce(new Error('boom'));
+    await userEvent.click(screen.getAllByRole('button', { name: 'Go to next page' })[0]);
+
+    await waitFor(() => expect(mockShowError).toHaveBeenCalledWith('Query failed', 'boom'));
+
+    // Prior page-1 rows stay; page-2 rows never appear.
+    expect(screen.getByText('s50p1-r')).toBeInTheDocument();
+    expect(screen.queryByText('s50p2-r')).not.toBeInTheDocument();
+    // The page control is restored to page 1.
+    expect((screen.getAllByLabelText('Current page')[0] as HTMLInputElement).value).toBe('1');
+  });
+
+  it('restores filters and keeps prior rows when a facet re-query fails', async () => {
+    await runInitialQuery();
+
+    // The facet re-query (fired on dropdown close) fails.
+    vi.mocked(elasticsearchApi.queryTelemetry).mockRejectedValueOnce(new Error('boom'));
+    await selectFacetValue('scenario_type', 'pod_disruption_scenarios (5)');
+
+    await waitFor(() => expect(mockShowError).toHaveBeenCalledWith('Query failed', 'boom'));
+
+    // No chip is committed for the failed selection; prior rows remain visible.
+    expect(screen.queryByText('Scenario Type: pod_disruption_scenarios')).not.toBeInTheDocument();
+    expect(screen.getByText('abc1234')).toBeInTheDocument();
+  });
 });

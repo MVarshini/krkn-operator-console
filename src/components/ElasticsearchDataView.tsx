@@ -75,6 +75,11 @@ const FILTER_CATEGORIES: { key: string; label: string }[] = [
 // server-side (MaxQuerySize), so these stay within a sane range.
 const PER_PAGE_OPTIONS = [10, 20, 50, 100];
 
+// Elasticsearch's default index.max_result_window. Offsets (page * size) past
+// this are rejected, so pagination caps itemCount here to keep later pages
+// unselectable.
+const MAX_RESULT_WINDOW = 10000;
+
 /**
  * Formats an epoch-seconds timestamp as "MMM DD, YYYY, h:mm:ss AM/PM".
  * Returns an em dash when the timestamp is missing or zero.
@@ -474,6 +479,13 @@ export function ElasticsearchDataView() {
   const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({});
   const [facets, setFacets] = useState<Record<string, FacetOption[]>>({});
   const [isValueSelectOpen, setIsValueSelectOpen] = useState(false);
+  // Tracks whether the value multi-select changed the current category's
+  // selection while open. The query is deferred until the dropdown closes, so
+  // this guards against re-querying when it closes without any change.
+  const valueSelectionDirty = useRef(false);
+  // Snapshot of activeFilters taken when the value multi-select opens, so a
+  // failed deferred re-query can restore the pre-edit selection.
+  const filtersBeforeEditRef = useRef<Record<string, string[]>>({});
 
   // Monotonic id identifying the most recent query. Each run captures the id it
   // started with; a response only updates the table if its id still matches, so
@@ -563,6 +575,11 @@ export function ElasticsearchDataView() {
     pageArg: number,
     perPageArg: number,
     filtersArg?: Record<string, string[]>,
+    // Rollback invoked when this run fails while still current. Pagination and
+    // filter controls apply their criteria optimistically and pass a rollback so
+    // a failed re-query restores the prior page/perPage/filters, keeping the
+    // controls consistent with the still-displayed prior results.
+    onError?: () => void,
   ) => {
     if (!validateDates()) return;
     lastRunnerRef.current = runner;
@@ -584,6 +601,9 @@ export function ElasticsearchDataView() {
     } catch (err) {
       if (latestRequestId.current !== requestId) return;
       showError('Query failed', err instanceof Error ? err.message : 'Could not query Elasticsearch');
+      // Restore the criteria this run changed so the controls keep describing the
+      // prior results that remain on screen.
+      onError?.();
     } finally {
       if (latestRequestId.current === requestId) {
         setQuerying(false);
@@ -593,15 +613,17 @@ export function ElasticsearchDataView() {
 
   // Re-runs the last-executed query path with new paging/filter criteria. Used
   // by the pagination and faceted-filter controls, which never change the
-  // connection, only the page, page size, or filters.
+  // connection, only the page, page size, or filters. `onError` restores the
+  // caller's optimistically-applied criteria if the re-query fails.
   const rerun = (
     pageArg: number,
     perPageArg: number,
     filtersArg?: Record<string, string[]>,
+    onError?: () => void,
   ) => {
     const runner = lastRunnerRef.current;
     if (!runner) return;
-    void executeQuery(runner, pageArg, perPageArg, filtersArg);
+    void executeQuery(runner, pageArg, perPageArg, filtersArg, onError);
   };
 
   const handleRunQuery = async () => {
@@ -667,15 +689,17 @@ export function ElasticsearchDataView() {
 
   // Switching category only changes which category the value dropdown edits.
   // Existing selections in other categories are kept (multiple categories can be
-  // filtered at once), so no re-query is needed here.
+  // filtered at once). Closing the value dropdown flushes any pending selection
+  // for the previous category as a deferred query.
   const handleCategoryChange = (category: string) => {
     setFilterCategory(category);
-    setIsValueSelectOpen(false);
+    handleValueSelectOpenChange(false);
   };
 
   // Toggling a value updates the current category's selection within
-  // activeFilters and immediately re-queries with the full filter set across all
-  // categories (auto re-query), keeping the multi-select open.
+  // activeFilters and keeps the multi-select open. The query is deferred until
+  // the dropdown closes (see handleValueSelectOpenChange) so multiple values can
+  // be picked in one interaction without a re-query per click.
   const handleValueToggle = (value: string) => {
     if (!filterCategory) return;
     const current = activeFilters[filterCategory] ?? [];
@@ -684,9 +708,30 @@ export function ElasticsearchDataView() {
       : [...current, value];
     const next = { ...activeFilters, [filterCategory]: nextValues };
     setActiveFilters(next);
+    // Mark the selection dirty; the deferred query runs on close.
+    valueSelectionDirty.current = true;
+  };
+
+  // Runs the deferred filter query when the value multi-select closes (toggle
+  // click or focus/click outside). Only re-queries if the selection changed
+  // while open, so opening and closing without a change is a no-op.
+  const handleValueSelectOpenChange = (isOpen: boolean) => {
+    setIsValueSelectOpen(isOpen);
+    if (isOpen) {
+      // Capture the pre-edit selection so a failed re-query can restore it.
+      filtersBeforeEditRef.current = activeFilters;
+      return;
+    }
+    if (!valueSelectionDirty.current) return;
+    valueSelectionDirty.current = false;
+    const prevFilters = filtersBeforeEditRef.current;
+    const prevPage = page;
     // A filter change resets to the first page of the new result set.
     setPage(1);
-    rerun(1, perPage, buildFilters(next));
+    rerun(1, perPage, buildFilters(activeFilters), () => {
+      setActiveFilters(prevFilters);
+      setPage(prevPage);
+    });
   };
 
   const selectedValues = filterCategory ? activeFilters[filterCategory] ?? [] : [];
@@ -769,13 +814,13 @@ export function ElasticsearchDataView() {
               id="es-filter-values"
               role="menu"
               isOpen={isValueSelectOpen}
-              onOpenChange={(isOpen) => setIsValueSelectOpen(isOpen)}
+              onOpenChange={handleValueSelectOpenChange}
               selected={selectedValues}
               onSelect={(_e, value) => handleValueToggle(value as string)}
               toggle={(toggleRef) => (
                 <MenuToggle
                   ref={toggleRef}
-                  onClick={() => setIsValueSelectOpen(!isValueSelectOpen)}
+                  onClick={() => handleValueSelectOpenChange(!isValueSelectOpen)}
                   isExpanded={isValueSelectOpen}
                   isDisabled={!filterCategory || valueOptions.length === 0}
                   style={{ width: '22em' }}
@@ -810,11 +855,18 @@ export function ElasticsearchDataView() {
               variant="link"
               isInline
               onClick={() => {
+                const prevFilters = activeFilters;
+                const prevCategory = filterCategory;
+                const prevPage = page;
                 setFilterCategory('');
                 setActiveFilters({});
                 setIsValueSelectOpen(false);
                 setPage(1);
-                rerun(1, perPage, undefined);
+                rerun(1, perPage, undefined, () => {
+                  setActiveFilters(prevFilters);
+                  setFilterCategory(prevCategory);
+                  setPage(prevPage);
+                });
               }}
             >
               Clear all filters
@@ -837,11 +889,16 @@ export function ElasticsearchDataView() {
                   <Label
                     color="blue"
                     onClose={() => {
+                      const prevFilters = activeFilters;
+                      const prevPage = page;
                       const nextValues = (activeFilters[category] ?? []).filter((v) => v !== value);
                       const next = { ...activeFilters, [category]: nextValues };
                       setActiveFilters(next);
                       setPage(1);
-                      rerun(1, perPage, buildFilters(next));
+                      rerun(1, perPage, buildFilters(next), () => {
+                        setActiveFilters(prevFilters);
+                        setPage(prevPage);
+                      });
                     }}
                   >
                     {label}: {value}
@@ -856,21 +913,29 @@ export function ElasticsearchDataView() {
   );
 
   // Pagination control reused above and below the table. `variant` distinguishes
-  // the top and bottom instances.
+  // the top and bottom instances. itemCount is capped to Elasticsearch's default
+  // 10000-result window (index.max_result_window); offsets past it are rejected
+  // server-side, so pages beyond it must not be selectable.
   const paginationControl = (variant: PaginationVariant) => (
     <Pagination
-      itemCount={total}
+      itemCount={Math.min(total, MAX_RESULT_WINDOW)}
       perPage={perPage}
       page={page}
       onSetPage={(_evt, newPage) => {
+        const prevPage = page;
         setPage(newPage);
-        rerun(newPage, perPage, buildFilters(activeFilters));
+        rerun(newPage, perPage, buildFilters(activeFilters), () => setPage(prevPage));
       }}
       onPerPageSelect={(_evt, newPerPage) => {
         // Changing page size returns to the first page.
+        const prevPage = page;
+        const prevPerPage = perPage;
         setPerPage(newPerPage);
         setPage(1);
-        rerun(1, newPerPage, buildFilters(activeFilters));
+        rerun(1, newPerPage, buildFilters(activeFilters), () => {
+          setPerPage(prevPerPage);
+          setPage(prevPage);
+        });
       }}
       variant={variant}
       isCompact={variant === PaginationVariant.top}
