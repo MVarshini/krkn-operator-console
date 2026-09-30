@@ -16,7 +16,8 @@ import { useStudioContext } from './StudioContext';
 import { useNotifications } from '../../hooks';
 import { SaveWorkflowModal } from './SaveWorkflowModal';
 import { SaveWorkflowConfirmModal } from './SaveWorkflowConfirmModal';
-import { parseImportedWorkflow } from './studioImport';
+import { parseImportedWorkflow, assembleExportFile } from './studioImport';
+import { downloadJson } from '../../utils/downloadJson';
 
 interface StudioToolbarProps {
   onRunWorkflow: () => void;
@@ -56,15 +57,11 @@ export function StudioToolbar({ onRunWorkflow }: StudioToolbarProps) {
       return;
     }
 
-    // Serialize the full export payload (graph + studioLayout + metadata) so the
-    // file can be re-imported losslessly via "Import JSON".
-    const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `chaos-workflow-${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    // Write a krknctl-compatible file: the top level is the flat executable
+    // graph, with Studio state embedded under `_studioLayout`/`_metadata` so the
+    // file both runs in krknctl and re-imports losslessly via "Import JSON".
+    const file = assembleExportFile(result.graph, result.studioLayout, result.metadata);
+    downloadJson(file, `chaos-workflow-${Date.now()}.json`);
   };
 
   const handleImportClick = () => {
@@ -193,7 +190,7 @@ export function StudioToolbar({ onRunWorkflow }: StudioToolbarProps) {
           <ToolbarItem>
             <Button
               variant="secondary"
-              icon={<UploadIcon />}
+              icon={<DownloadIcon />}
               onClick={handleExport}
               isDisabled={workflow.nodes.length === 0}
             >
@@ -204,7 +201,7 @@ export function StudioToolbar({ onRunWorkflow }: StudioToolbarProps) {
           <ToolbarItem>
             <Button
               variant="secondary"
-              icon={<DownloadIcon />}
+              icon={<UploadIcon />}
               onClick={handleImportClick}
             >
               Import JSON

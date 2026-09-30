@@ -492,7 +492,17 @@ export function StudioProvider({ children, initialWorkflow, initialCategories = 
     setSavedWorkflowState(null);
     setLastSavedSnapshot(null);
     setIsEditingDetails(false);
+    // Clear the prior autosave, then persist the imported workflow immediately so
+    // it survives a reload before the periodic autosave interval next fires. The
+    // interval keeps saving later edits (see the autosave useEffect above).
     clearAutosave();
+    if (newWorkflow.nodes.length > 0) {
+      saveAutosave({
+        workflow: newWorkflow,
+        timestamp: Date.now(),
+        version: AUTOSAVE_VERSION,
+      });
+    }
   }, []);
 
   const clearWorkflow = useCallback(() => {
