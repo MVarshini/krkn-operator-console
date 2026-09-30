@@ -48,17 +48,20 @@ class ElasticsearchApi extends BaseApiClient {
   /**
    * Queries telemetry documents from the telemetry index of a saved config.
    * Credentials are resolved server-side from the named config; only the config
-   * name (and optional result size) are sent.
+   * name (and optional paging/filter criteria) are sent. size is the page size
+   * and page is the 1-based page number used for server-side pagination.
    */
   async queryTelemetry(
     configName: string,
     size?: number,
+    page?: number,
     startDate?: string,
     endDate?: string,
+    filters?: Record<string, string[]>,
   ): Promise<QueryTelemetryResponse> {
     return this.fetchJson<QueryTelemetryResponse>('/elasticsearch-query', {
       method: 'POST',
-      body: JSON.stringify({ configName, size, startDate, endDate }),
+      body: JSON.stringify({ configName, size, page, startDate, endDate, filters }),
     });
   }
 
@@ -66,17 +69,20 @@ class ElasticsearchApi extends BaseApiClient {
    * Queries telemetry using an ephemeral inline connection instead of a saved
    * config. The supplied credentials are sent for this request only and are
    * never persisted server-side. Intended for users (including non-admins) who
-   * have no saved config but need to connect to an ES cluster ad hoc.
+   * have no saved config but need to connect to an ES cluster ad hoc. size is the
+   * page size and page is the 1-based page number used for server-side pagination.
    */
   async queryTelemetryInline(
     inline: InlineElasticsearchConnection,
     size?: number,
+    page?: number,
     startDate?: string,
     endDate?: string,
+    filters?: Record<string, string[]>,
   ): Promise<QueryTelemetryResponse> {
     return this.fetchJson<QueryTelemetryResponse>('/elasticsearch-query', {
       method: 'POST',
-      body: JSON.stringify({ inline, size, startDate, endDate }),
+      body: JSON.stringify({ inline, size, page, startDate, endDate, filters }),
     });
   }
 }

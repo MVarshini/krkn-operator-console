@@ -82,12 +82,15 @@ describe('ElasticsearchDataView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
 
     await waitFor(() => {
-      // Called with config, size, and the default start/end date bounds.
+      // Called with config, page size, page 1, default start/end date bounds,
+      // and no filters on a fresh run.
       expect(elasticsearchApi.queryTelemetry).toHaveBeenCalledWith(
         'prod-es',
         50,
+        1,
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        undefined,
       );
       // UUID is truncated to the first 7 characters.
       expect(screen.getByText('abc1234')).toBeInTheDocument();
@@ -99,11 +102,12 @@ describe('ElasticsearchDataView', () => {
 
   it('renders the telemetry summary with overridden labels, values, and pass rate', async () => {
     vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
-    // pass=3, fail=1 gives distinct values and a 75.0% pass rate computed by
-    // JobStatsSummary from succeededJobs/totalJobs.
+    // pass=3, fail=2 gives distinct values and a 60.0% pass rate computed by
+    // JobStatsSummary from succeededJobs/totalJobs. Values avoid colliding with
+    // the pagination's "1 - 1 of 1" digits.
     vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue({
       ...mockQueryResult,
-      stats: { pass: 3, fail: 1, pass_percent: 75 },
+      stats: { pass: 3, fail: 2, pass_percent: 60 },
     });
     render(<ElasticsearchDataView />);
 
@@ -118,11 +122,11 @@ describe('ElasticsearchDataView', () => {
     expect(screen.getByText('Pass Rate')).toBeInTheDocument();
 
     // Values: total = pass + fail, passed = pass, failed = fail.
-    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
     // Pass rate recomputed as succeeded / total.
-    expect(screen.getByText('75.0%')).toBeInTheDocument();
+    expect(screen.getByText('60.0%')).toBeInTheDocument();
 
     // Overridden card footers.
     expect(screen.getByText('Runs across matched window')).toBeInTheDocument();
@@ -176,10 +180,10 @@ describe('ElasticsearchDataView', () => {
 
     await waitFor(() => expect(screen.getByText('abc1234')).toBeInTheDocument());
 
-    // Changing the result limit invalidates the previously displayed telemetry.
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-    await userEvent.type(sizeInput, '25');
+    // Changing the date range invalidates the previously displayed telemetry.
+    const startInput = screen.getByLabelText('Start date');
+    await userEvent.clear(startInput);
+    await userEvent.type(startInput, '2024-01-01');
 
     expect(screen.queryByText('abc1234')).not.toBeInTheDocument();
     expect(
@@ -205,9 +209,9 @@ describe('ElasticsearchDataView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
 
     // Change a criterion while the first response is still pending.
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-    await userEvent.type(sizeInput, '25');
+    const startInput = screen.getByLabelText('Start date');
+    await userEvent.clear(startInput);
+    await userEvent.type(startInput, '2024-01-01');
 
     // The in-flight response now resolves, but it is stale and must be ignored.
     resolveQuery(mockQueryResult);
@@ -237,51 +241,6 @@ describe('ElasticsearchDataView', () => {
 
     await userEvent.click(runButton);
     expect(elasticsearchApi.queryTelemetry).not.toHaveBeenCalled();
-  });
-
-  it('blocks the query and shows an inline error when max results is out of range', async () => {
-    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
-    vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue(mockQueryResult);
-    render(<ElasticsearchDataView />);
-
-    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
-
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-    await userEvent.type(sizeInput, '999999');
-
-    expect(screen.getByText('Max results must be between 1 and 10000')).toBeInTheDocument();
-
-    const runButton = screen.getByRole('button', { name: 'Run Query' });
-    expect(runButton).toBeDisabled();
-
-    await userEvent.click(runButton);
-    expect(elasticsearchApi.queryTelemetry).not.toHaveBeenCalled();
-  });
-
-  it('omits the size limit when max results is left empty', async () => {
-    vi.mocked(elasticsearchApi.listConfigs).mockResolvedValue(mockConfigs);
-    vi.mocked(elasticsearchApi.queryTelemetry).mockResolvedValue(mockQueryResult);
-    render(<ElasticsearchDataView />);
-
-    await waitFor(() => expect(screen.getByText('prod-es')).toBeInTheDocument());
-    await userEvent.selectOptions(screen.getByLabelText('Select an Elasticsearch config'), 'prod-es');
-
-    const sizeInput = screen.getByLabelText('Max results');
-    await userEvent.clear(sizeInput);
-
-    await userEvent.click(screen.getByRole('button', { name: 'Run Query' }));
-
-    await waitFor(() => {
-      // Empty input intentionally omits the limit (undefined size).
-      expect(elasticsearchApi.queryTelemetry).toHaveBeenCalledWith(
-        'prod-es',
-        undefined,
-        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-      );
-    });
   });
 
   it('creates a config, refreshes the list, closes the modal, and selects the new config', async () => {
@@ -394,8 +353,10 @@ describe('ElasticsearchDataView', () => {
           telemetryIndex: 'krkn-telemetry',
         }),
         50,
+        1,
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        undefined,
       );
       expect(screen.getByText('abc1234')).toBeInTheDocument();
     });

@@ -57,7 +57,14 @@ describe('elasticsearchApi.queryTelemetry', () => {
   it('POSTs to the query endpoint with the serialized parameters and auth header', async () => {
     fetchMock.mockResolvedValue(jsonResponse(mockResponse));
 
-    const result = await elasticsearchApi.queryTelemetry('prod-es', 50, '2025-01-01', '2025-01-02');
+    const result = await elasticsearchApi.queryTelemetry(
+      'prod-es',
+      50,
+      1,
+      '2025-01-01',
+      '2025-01-02',
+      { cloud_type: ['aws'] },
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -67,8 +74,10 @@ describe('elasticsearchApi.queryTelemetry', () => {
     expect(JSON.parse(options.body as string)).toEqual({
       configName: 'prod-es',
       size: 50,
+      page: 1,
       startDate: '2025-01-01',
       endDate: '2025-01-02',
+      filters: { cloud_type: ['aws'] },
     });
 
     const headers = new Headers(options.headers);
