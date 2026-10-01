@@ -162,8 +162,14 @@ function StudioNodeEditorModalComponent({
       resetScenarios();
       return;
     }
+    // Registry changes call resetScenarios, so a non-empty list belongs to the
+    // current registry. Skip refetch when scenarios already loaded (or loading)
+    // to avoid reloading on back-and-forth navigation with no registry change.
+    if (loadingScenarios || (scenarios.length > 0 && !scenariosError)) {
+      return;
+    }
     void fetchScenarios(getSelectedRegistryConfig());
-  }, [fetchScenarios, getSelectedRegistryConfig, registryName, registryType, resetScenarios]);
+  }, [fetchScenarios, getSelectedRegistryConfig, loadingScenarios, registryName, registryType, resetScenarios, scenarios.length, scenariosError]);
 
   const retryFetchScenarios = useCallback(() => {
     loadScenariosForSelectedRegistry();
@@ -311,6 +317,7 @@ function StudioNodeEditorModalComponent({
         />
       ),
       isNextDisabled: !scenarioListIsReady,
+      isNextLoading: loadingScenarios,
       isStepDisabled: registryType === 'private' && !registryName,
       onEnter: loadScenariosForSelectedRegistry,
     },
@@ -319,6 +326,7 @@ function StudioNodeEditorModalComponent({
       name: 'Configuration',
       isStepDisabled: !scenarioListIsReady,
       isNextDisabled: scenarioConfigStatus !== 'loaded',
+      isNextLoading: scenarioConfigStatus === 'loading',
       onEnter: startScenarioConfigLoad,
       component: selectedScenario ? (
         <ScenarioConfigStep

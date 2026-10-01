@@ -23,6 +23,7 @@ export interface WizardStepConfig {
   name: string;
   component: ReactNode;
   isNextDisabled?: boolean;
+  isNextLoading?: boolean;
   isStepDisabled?: boolean;
   onEnter?: () => void;
 }
@@ -65,7 +66,7 @@ export function WizardStepper({
   }, [isOpen]);
 
   const handleNext = () => {
-    if (currentStep.isNextDisabled) return;
+    if (currentStep.isNextDisabled || currentStep.isNextLoading) return;
     if (!isLastStep) {
       const nextStepIndex = activeStepIndex + 1;
       setActiveStepIndex(nextStepIndex);
@@ -193,9 +194,14 @@ export function WizardStepper({
           <Button
             variant="primary"
             onClick={handleNext}
-            isDisabled={currentStep.isNextDisabled}
+            isLoading={currentStep.isNextLoading}
+            isDisabled={currentStep.isNextDisabled || currentStep.isNextLoading}
           >
-            {isLastStep ? 'Save Configuration' : 'Next'}
+            {currentStep.isNextLoading
+              ? 'Loading…'
+              : isLastStep
+                ? 'Save Configuration'
+                : 'Next'}
           </Button>
         </div>
       </div>

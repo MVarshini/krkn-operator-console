@@ -104,12 +104,18 @@ const configuredNode = (weight?: number, registryType: 'public' | 'private' = 'p
   },
 });
 
-function renderEditor(node: StudioNode, onSave = vi.fn(), fetchScenarios = vi.fn(), loading = false) {
+function renderEditor(
+  node: StudioNode,
+  onSave = vi.fn(),
+  fetchScenarios = vi.fn(),
+  loading = false,
+  scenarios: Array<{ name: string }> = [{ name: 'pod-delete' }],
+) {
   vi.mocked(useStudioContext).mockReturnValue({
     validateNodeId: vi.fn(() => ({ valid: true })),
   } as unknown as ReturnType<typeof useStudioContext>);
   vi.mocked(useScenariosFetch).mockReturnValue({
-    scenarios: [{ name: 'pod-delete' }],
+    scenarios,
     loading,
     error: null,
     fetchScenarios,
@@ -182,12 +188,26 @@ describe('StudioNodeEditorModal resiliency weight', () => {
 
   it('loads scenarios from the selected registry only after advancing from registry selection', async () => {
     const fetchScenarios = vi.fn();
-    renderEditor(configuredNode(undefined, 'private', 'corp-registry'), undefined, fetchScenarios);
+    renderEditor(configuredNode(undefined, 'private', 'corp-registry'), undefined, fetchScenarios, false, []);
 
     expect(fetchScenarios).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Next' }));
 
     expect(fetchScenarios).toHaveBeenCalledWith({ registryName: 'corp-registry' });
+  });
+
+  it('does not refetch scenarios when they are already loaded for the registry', async () => {
+    const fetchScenarios = vi.fn();
+    // Non-empty scenarios simulate an already-loaded list for the current
+    // registry. Navigating back and forth must not trigger a refetch.
+    renderEditor(configuredNode(undefined, 'private', 'corp-registry'), undefined, fetchScenarios);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(fetchScenarios).not.toHaveBeenCalled();
   });
 
   it('requires a registry selection before advancing in private mode', () => {

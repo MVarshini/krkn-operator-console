@@ -21,6 +21,32 @@ import { cloudCredentialsApi } from '../../services/cloudCredentialsApi';
 import { hasCloudFields, getCloudDisabledFields, resolveCloudTypeForProvider, resolveEffectiveCloudType, filterScenarioFieldsByCloudType } from '../../utils/cloudProviderUtils';
 import type { ScenarioDetail, ScenarioFormValues, ScenariosRequest, ScenarioGlobals, TouchedFields, ElasticsearchConfig, CloudCredential } from '../../types/api';
 
+/**
+ * Cache of fetched scenario details keyed by registry + scenario name.
+ * The wizard unmounts this step when the user navigates away, so without a
+ * cache every return to the configuration step would refetch. The cache lets a
+ * remount restore the loaded detail synchronously and skip the network call
+ * when nothing changed. Only the field schema is cached here; user-entered form
+ * values live in the parent modal state and are unaffected. A changed
+ * scenario/registry uses a different key.
+ */
+const scenarioDetailCache = new Map<string, ScenarioDetail>();
+
+const scenarioDetailCacheKey = (scenarioName: string, registryName: string): string =>
+  `${registryName}::${scenarioName}`;
+
+const extractDefaultValues = (detail: ScenarioDetail): ScenarioFormValues => {
+  const defaults: ScenarioFormValues = {};
+  if (Array.isArray(detail.fields)) {
+    detail.fields.forEach(field => {
+      if (field.default !== undefined && field.default !== '') {
+        defaults[field.variable] = field.default;
+      }
+    });
+  }
+  return defaults;
+};
+
 interface ScenarioConfigStepProps {
   scenarioName: string;
   registryName: string; // PRIMITIVE instead of object
@@ -74,6 +100,20 @@ export function ScenarioConfigStep({
   useEffect(() => {
     let mounted = true;
 
+    // Restore from cache on remount (step navigation) without a refetch.
+    const cacheKey = scenarioDetailCacheKey(scenarioName, registryName);
+    const cachedDetail = scenarioDetailCache.get(cacheKey);
+    if (cachedDetail) {
+      setScenarioDetail(cachedDetail);
+      setLoading(false);
+      setError(null);
+      onLoadStatusChange?.('loaded');
+      onDefaultValuesLoad?.(extractDefaultValues(cachedDetail));
+      return () => {
+        mounted = false;
+      };
+    }
+
     async function fetchScenarioDetail() {
       setLoading(true);
       setError(null);
@@ -86,23 +126,12 @@ export function ScenarioConfigStep({
         const detail = await operatorApi.getScenarioDetail(scenarioName, config);
 
         if (mounted) {
+          scenarioDetailCache.set(cacheKey, detail);
           setScenarioDetail(detail);
           onLoadStatusChange?.('loaded');
 
-          // Extract default values from ALL fields
-          const defaults: ScenarioFormValues = {};
-
-          // Fields is a direct array, not separated by required/optional
-          if (Array.isArray(detail.fields)) {
-            detail.fields.forEach(field => {
-              if (field.default !== undefined && field.default !== '') {
-                defaults[field.variable] = field.default;
-              }
-            });
-          }
-
           // Notify parent of default values
-          onDefaultValuesLoad?.(defaults);
+          onDefaultValuesLoad?.(extractDefaultValues(detail));
         }
       } catch (err) {
         if (mounted) {
