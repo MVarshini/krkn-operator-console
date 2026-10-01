@@ -9,6 +9,7 @@ import {
   DataListItemRow,
   DataListItemCells,
   DataListCell,
+  DataListAction,
   DataListToggle,
   DataListContent,
   EmptyState,
@@ -62,6 +63,7 @@ import { RunCategoryActions, RunCategoryStripe } from './RunCategoryActions';
 import { operatorApi } from '../services/operatorApi';
 import { toGraphClusterScores, SCORE_CALCULATING } from '../utils/resiliency';
 import { TERMINAL_PHASES } from '../hooks/useScenarioRunsPoller';
+import './JobsList.css';
 
 import type { CategoryResponse, ScenarioRunState, ScenarioRunPhase, ClusterJobPhase, GraphRunSummary, GraphClusterScore, UnifiedJobItem, StudioWorkflow } from '../types/api';
 
@@ -517,6 +519,49 @@ export function JobsList({
 
   const hasActiveFilters = Boolean(ownerFilter || isValidDate(dateTimeFrom) || isValidDate(dateTimeTo) || customRunNameFilter || categoryFilters.length > 0);
 
+  const renderRunActions = ({
+    actionType,
+    runName,
+    categoryKey,
+    assignedCategoryNames,
+    onToggleCategory,
+    onDelete,
+    runId,
+    runPhase,
+  }: {
+    actionType: 'graph' | 'run';
+    runName: string;
+    categoryKey: string;
+    assignedCategoryNames: string[];
+    onToggleCategory: (category: CategoryResponse) => void;
+    onDelete: () => void;
+    runId?: string;
+    runPhase?: string;
+  }) => (
+    <DataListAction
+      id={`actions-${actionType}-${runName}`}
+      aria-labelledby={`toggle-${actionType === 'graph' ? 'graph' : 'run'}-${runName}`}
+      aria-label={`Actions for run ${runName}`}
+      isPlainButtonAction
+      style={{ alignItems: 'center' }}
+    >
+      <RunCategoryActions
+        runName={runName}
+        runId={runId}
+        runPhase={runPhase}
+        categories={categories}
+        assignedCategoryNames={assignedCategoryNames}
+        isCategoriesLoading={isCategoriesLoading}
+        categoriesError={categoryError}
+        isCategoryUpdating={categoryUpdateKeys.has(categoryKey)}
+        isDeleting={deletingRun === runName}
+        onOpenCategories={() => { void loadCategories(); }}
+        onToggleCategory={onToggleCategory}
+        onDelete={onDelete}
+      />
+    </DataListAction>
+  );
+
   return (
     <Card>
       <CardTitle>
@@ -809,7 +854,13 @@ export function JobsList({
         ) : (
           <>
           {hasReceivedStats && <JobStatsSummary stats={stats} />}
-          <DataList aria-label="Scenario runs list" isCompact>
+          <DataList
+            aria-label="Scenario runs list"
+            className="jobs-list-runs"
+            gridBreakpoint="none"
+            isCompact
+            wrapModifier="truncate"
+          >
             {filteredUnifiedRuns.map((item) => {
               // Handle GraphRun
               if (item.type === 'graph') {
@@ -833,7 +884,7 @@ export function JobsList({
                       />
                       <DataListItemCells
                         dataListCells={[
-                          <DataListCell key="status" width={1}>
+                          <DataListCell key="status" width={1} className="jobs-list-summary-cell--status">
                             <div>
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>Status:</strong>
@@ -843,7 +894,7 @@ export function JobsList({
                               </Label>
                             </div>
                           </DataListCell>,
-                          <DataListCell key="workflow" width={2}>
+                          <DataListCell key="workflow" width={2} className="jobs-list-summary-cell--primary">
                             <div>
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>
@@ -853,6 +904,7 @@ export function JobsList({
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <code
+                                  className="jobs-list-run-primary-value"
                                   style={{
                                     fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
                                     fontSize: 'var(--pf-v5-global--FontSize--sm)',
@@ -869,40 +921,60 @@ export function JobsList({
                               </div>
                             </div>
                           </DataListCell>,
-                          <DataListCell key="owner" width={2}>
+                          <DataListCell key="owner" width={2} className="jobs-list-summary-cell--owner">
                             <div>
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>User:</strong>
                               </div>
-                              <code
-                                style={{
-                                  fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
-                                  fontSize: 'var(--pf-v5-global--FontSize--sm)',
-                                  backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
-                                  padding: '0.125rem 0.5rem',
-                                  borderRadius: 'var(--pf-v5-global--BorderRadius--sm)',
-                                  display: 'inline-block',
-                                  border: '1px solid var(--pf-v5-global--BorderColor--100)',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {item.ownerUserId || 'Unknown'}
-                              </code>
+                              <Tooltip content={item.ownerUserId || 'Unknown'}>
+                                <code
+                                  className="jobs-list-owner-id"
+                                  aria-label={item.ownerUserId || 'Unknown'}
+                                  style={{
+                                    fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
+                                    fontSize: 'var(--pf-v5-global--FontSize--sm)',
+                                    backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                                    padding: '0.125rem 0.5rem',
+                                    borderRadius: 'var(--pf-v5-global--BorderRadius--sm)',
+                                    display: 'inline-block',
+                                    border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {item.ownerUserId || 'Unknown'}
+                                </code>
+                              </Tooltip>
                             </div>
                           </DataListCell>,
-                          <DataListCell key="total-nodes" width={2}>
+                          <DataListCell key="total-nodes" width={2} className="jobs-list-summary-cell--graph-nodes">
                             <div>
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>Graph Nodes:</strong>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <Label color="blue" icon={<TopologyIcon />}>
-                                  {item.summary.completedNodes} / {item.summary.totalNodes}
-                                </Label>
+                                <Tooltip
+                                  content={`${item.summary.completedNodes} completed, ${item.summary.failedNodes} failed, ${item.summary.runningNodes} running, ${item.summary.pendingNodes} pending, ${item.summary.totalNodes} total`}
+                                >
+                                  <Label color="blue" icon={<TopologyIcon />}>
+                                    <span className="jobs-list-graph-node-counts">
+                                      <span className="jobs-list-graph-node-counts__completed">
+                                        <CheckCircleIcon aria-hidden="true" />
+                                        {item.summary.completedNodes}
+                                      </span>
+                                      <span className="jobs-list-graph-node-counts__separator" aria-hidden="true">/</span>
+                                      <span className="jobs-list-graph-node-counts__total">{item.summary.totalNodes}</span>
+                                    </span>
+                                  </Label>
+                                </Tooltip>
                               </div>
                             </div>
                           </DataListCell>,
-                          <DataListCell key="resiliency-score" width={2}>
+                          <DataListCell
+                            key="run-name-spacer"
+                            aria-hidden="true"
+                            className="jobs-list-summary-cell--run-name"
+                          />,
+                          <DataListCell key="resiliency-score" width={2} className="jobs-list-summary-cell--score">
                             <div>
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>Resiliency Score:</strong>
@@ -913,7 +985,7 @@ export function JobsList({
                               />
                             </div>
                           </DataListCell>,
-                          <DataListCell key="created" width={2}>
+                          <DataListCell key="created" width={2} className="jobs-list-summary-cell--created">
                             <div>
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>Created:</strong>
@@ -934,26 +1006,18 @@ export function JobsList({
                               </code>
                             </div>
                           </DataListCell>,
-                          <DataListCell key="actions" width={1}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                              <RunCategoryActions
-                                runName={item.graphRunName}
-                categories={categories}
-                assignedCategoryNames={graphCategoryNames}
-                isCategoriesLoading={isCategoriesLoading}
-                categoriesError={categoryError}
-                isCategoryUpdating={categoryUpdateKeys.has(graphCategoryKey)}
-                isDeleting={deletingRun === item.graphRunName}
-                onOpenCategories={() => { void loadCategories(); }}
-                onToggleCategory={(category) => {
-                                  void handleToggleRunCategory('graph-runs', item.graphRunName, graphCategoryNames, category);
-                                }}
-                                onDelete={() => setConfirmDeleteRun(item.graphRunName)}
-                              />
-                            </div>
-                          </DataListCell>,
                         ]}
                       />
+                      {renderRunActions({
+                        actionType: 'graph',
+                        runName: item.graphRunName,
+                        categoryKey: graphCategoryKey,
+                        assignedCategoryNames: graphCategoryNames,
+                        onToggleCategory: (category) => {
+                          void handleToggleRunCategory('graph-runs', item.graphRunName, graphCategoryNames, category);
+                        },
+                        onDelete: () => setConfirmDeleteRun(item.graphRunName),
+                      })}
                     </DataListItemRow>
 
                     {/* GraphRun Expanded Content - Show DAG visualization */}
@@ -972,6 +1036,8 @@ export function JobsList({
 
               // Handle standalone ScenarioRun
               const run = item.run;
+              const customRunName = run.customRunName?.trim();
+              const scenarioRunName = run.scenarioRunName.trim();
               const isRunExpanded = expandedRunIds.has(run.scenarioRunName);
               const runPhaseDisplay = getRunPhaseDisplay(run.phase);
               const scenarioCategoryKey = runCategoryKey('scenario-runs', run.scenarioRunName);
@@ -992,7 +1058,7 @@ export function JobsList({
                     />
                     <DataListItemCells
                       dataListCells={[
-                        <DataListCell key="status" width={1}>
+                        <DataListCell key="status" width={1} className="jobs-list-summary-cell--status">
                           <div>
                             <div style={{ marginBottom: '0.25rem' }}>
                               <strong>Status:</strong>
@@ -1002,7 +1068,7 @@ export function JobsList({
                             </Label>
                           </div>
                         </DataListCell>,
-                        <DataListCell key="scenario" width={2}>
+                        <DataListCell key="scenario" width={2} className="jobs-list-summary-cell--primary">
                           <div>
                             <div style={{ marginBottom: '0.25rem' }}>
                               <strong>
@@ -1012,6 +1078,7 @@ export function JobsList({
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <code
+                                className="jobs-list-run-primary-value"
                                 style={{
                                   fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
                                   fontSize: 'var(--pf-v5-global--FontSize--sm)',
@@ -1033,35 +1100,85 @@ export function JobsList({
                                 </Tooltip>
                               )}
                             </div>
+                            <Tooltip
+                              content={customRunName && customRunName !== scenarioRunName
+                                ? `Run name: ${customRunName}; run ID: ${scenarioRunName}`
+                                : `Run ID: ${scenarioRunName}`}
+                            >
+                              <div
+                                className="jobs-list-compact-run-identity"
+                                aria-label={customRunName && customRunName !== scenarioRunName
+                                  ? `Run name ${customRunName}, run ID ${scenarioRunName}`
+                                  : `Run ID ${scenarioRunName}`}
+                              >
+                                {customRunName && customRunName !== scenarioRunName && (
+                                  <code>{customRunName}</code>
+                                )}
+                                <code>{scenarioRunName}</code>
+                              </div>
+                            </Tooltip>
                           </div>
                         </DataListCell>,
-                        <DataListCell key="owner" width={2}>
+                        <DataListCell key="owner" width={2} className="jobs-list-summary-cell--owner">
                           <div>
                             <div style={{ marginBottom: '0.25rem' }}>
                               <strong>User:</strong>
                             </div>
-                            <code
-                              style={{
-                                fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
-                                fontSize: 'var(--pf-v5-global--FontSize--sm)',
-                                backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
-                                padding: '0.125rem 0.5rem',
-                                borderRadius: 'var(--pf-v5-global--BorderRadius--sm)',
-                                display: 'inline-block',
-                                border: '1px solid var(--pf-v5-global--BorderColor--100)',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {run.ownerUserId || 'Unknown'}
-                            </code>
+                            <Tooltip content={run.ownerUserId || 'Unknown'}>
+                              <code
+                                className="jobs-list-owner-id"
+                                aria-label={run.ownerUserId || 'Unknown'}
+                                style={{
+                                  fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
+                                  fontSize: 'var(--pf-v5-global--FontSize--sm)',
+                                  backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                                  padding: '0.125rem 0.5rem',
+                                  borderRadius: 'var(--pf-v5-global--BorderRadius--sm)',
+                                  display: 'inline-block',
+                                  border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {run.ownerUserId || 'Unknown'}
+                              </code>
+                            </Tooltip>
                           </div>
                         </DataListCell>,
-                        <DataListCell key="run-name" width={2}>
+                        <DataListCell key="jobs-summary" width={2} className="jobs-list-summary-cell--jobs">
+                          <div>
+                            <div style={{ marginBottom: '0.25rem' }}>
+                              <strong>Jobs:</strong>
+                            </div>
+                            <Tooltip
+                              content={`${run.successfulJobs} succeeded, ${run.failedJobs} failed, ${run.runningJobs} running`}
+                            >
+                              <Label color="blue" icon={<HiOutlineRocketLaunch />}>
+                                <span className="jobs-list-job-counts">
+                                  <span className="jobs-list-job-counts__succeeded">
+                                    <CheckCircleIcon aria-hidden="true" />
+                                    {run.successfulJobs}
+                                  </span>
+                                  <span className="jobs-list-job-counts__separator" aria-hidden="true">/</span>
+                                  <span className="jobs-list-job-counts__failed">
+                                    <ExclamationCircleIcon aria-hidden="true" />
+                                    {run.failedJobs}
+                                  </span>
+                                  <span className="jobs-list-job-counts__separator" aria-hidden="true">/</span>
+                                  <span className="jobs-list-job-counts__running">
+                                    <SyncAltIcon aria-hidden="true" />
+                                    {run.runningJobs}
+                                  </span>
+                                </span>
+                              </Label>
+                            </Tooltip>
+                          </div>
+                        </DataListCell>,
+                        <DataListCell key="run-name" width={2} className="jobs-list-summary-cell--run-name">
                           <div>
                             <div style={{ marginBottom: '0.25rem' }}>
                               <strong>Run Name:</strong>
                             </div>
-                            {run.customRunName ? (
+                            {customRunName ? (
                               <>
                                 <code
                                   style={{
@@ -1073,23 +1190,25 @@ export function JobsList({
                                     display: 'inline-block',
                                     border: '1px solid var(--pf-v5-global--BorderColor--100)',
                                     whiteSpace: 'nowrap',
-                                    marginBottom: '0.25rem',
+                                    marginBottom: customRunName !== scenarioRunName ? '0.25rem' : 0,
                                   }}
                                 >
-                                  {run.customRunName}
+                                  {customRunName}
                                 </code>
-                                <div>
-                                  <code
-                                    style={{
-                                      fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
-                                      fontSize: 'var(--pf-v5-global--FontSize--xs)',
-                                      color: 'var(--pf-v5-global--Color--200)',
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {run.scenarioRunName}
-                                  </code>
-                                </div>
+                                {customRunName !== scenarioRunName && (
+                                  <div>
+                                    <code
+                                      style={{
+                                        fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
+                                        fontSize: 'var(--pf-v5-global--FontSize--xs)',
+                                        color: 'var(--pf-v5-global--Color--200)',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {scenarioRunName}
+                                    </code>
+                                  </div>
+                                )}
                               </>
                             ) : (
                               <code
@@ -1104,30 +1223,12 @@ export function JobsList({
                                   whiteSpace: 'nowrap',
                                 }}
                               >
-                                {run.scenarioRunName}
+                                {scenarioRunName}
                               </code>
                             )}
                           </div>
                         </DataListCell>,
-                        <DataListCell key="jobs-summary" width={2}>
-                          <div>
-                            <div style={{ marginBottom: '0.25rem' }}>
-                              <strong>Jobs:</strong>
-                            </div>
-                            <div style={{ fontSize: 'var(--pf-v5-global--FontSize--lg)', display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                              <span style={{ color: 'var(--pf-v5-global--success-color--100)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <span style={{ fontSize: '1.25rem' }}>✓</span> {run.successfulJobs}
-                              </span>
-                              <span style={{ color: 'var(--pf-v5-global--danger-color--100)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <span style={{ fontSize: '1.25rem' }}>✗</span> {run.failedJobs}
-                              </span>
-                              <span style={{ color: 'var(--pf-v5-global--info-color--100)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                <span style={{ fontSize: '1.25rem' }}>⟳</span> {run.runningJobs}
-                              </span>
-                            </div>
-                          </div>
-                        </DataListCell>,
-                        <DataListCell key="resiliency-score" width={2}>
+                        <DataListCell key="resiliency-score" width={2} className="jobs-list-summary-cell--score">
                           <div>
                             <div style={{ marginBottom: '0.25rem' }}>
                               <strong>Resiliency Score:</strong>
@@ -1143,7 +1244,7 @@ export function JobsList({
                             />
                           </div>
                         </DataListCell>,
-                        <DataListCell key="created" width={2}>
+                        <DataListCell key="created" width={2} className="jobs-list-summary-cell--created">
                           <div>
                             <div style={{ marginBottom: '0.25rem' }}>
                               <strong>Created:</strong>
@@ -1164,28 +1265,20 @@ export function JobsList({
                             </code>
                           </div>
                         </DataListCell>,
-                        <DataListCell key="actions" width={1}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                            <RunCategoryActions
-                              runName={run.scenarioRunName}
-                              runId={run.scenarioRunName}
-                              runPhase={run.phase}
-                              categories={categories}
-                              assignedCategoryNames={scenarioCategoryNames}
-                              isCategoriesLoading={isCategoriesLoading}
-                              categoriesError={categoryError}
-                              isCategoryUpdating={categoryUpdateKeys.has(scenarioCategoryKey)}
-                              isDeleting={deletingRun === run.scenarioRunName}
-                              onOpenCategories={() => { void loadCategories(); }}
-                              onToggleCategory={(category) => {
-                                void handleToggleRunCategory('scenario-runs', run.scenarioRunName, scenarioCategoryNames, category);
-                              }}
-                              onDelete={() => setConfirmDeleteRun(run.scenarioRunName)}
-                            />
-                          </div>
-                        </DataListCell>,
                       ]}
                     />
+                    {renderRunActions({
+                      actionType: 'run',
+                      runName: run.scenarioRunName,
+                      categoryKey: scenarioCategoryKey,
+                      assignedCategoryNames: scenarioCategoryNames,
+                      onToggleCategory: (category) => {
+                        void handleToggleRunCategory('scenario-runs', run.scenarioRunName, scenarioCategoryNames, category);
+                      },
+                      onDelete: () => setConfirmDeleteRun(run.scenarioRunName),
+                      runId: run.scenarioRunName,
+                      runPhase: run.phase,
+                    })}
                   </DataListItemRow>
 
                   {/* Scenario Run Details - Jobs List (expanded) */}

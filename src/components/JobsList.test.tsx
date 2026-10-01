@@ -82,6 +82,7 @@ function makeScenarioJobItem(
     customRunName?: string;
     createdAt?: string;
     scenarioName?: string;
+    ownerUserId?: string;
   } = {},
 ): UnifiedJobItem {
   return {
@@ -98,6 +99,7 @@ function makeScenarioJobItem(
       runningJobs: (opts.clusterJobs || []).filter(j => j.phase === 'Running').length,
       clusterJobs: opts.clusterJobs || [],
       customRunName: opts.customRunName,
+      ownerUserId: opts.ownerUserId,
     },
   };
 }
@@ -202,6 +204,38 @@ describe('JobsList', () => {
     expect(filtersCard).toHaveStyle({ boxShadow: 'var(--pf-v5-global--BoxShadow--sm)' });
   });
 
+  describe('Run name rendering', () => {
+    it('shows a matching custom name once', () => {
+      setMockJobs([makeScenarioJobItem('same-run', 'Succeeded', { customRunName: 'same-run' })]);
+      render(<JobsList {...defaultProps} />);
+
+      const runNameCell = screen.getByRole('list', { name: 'Scenario runs list' })
+        .querySelector('.jobs-list-summary-cell--run-name');
+      expect(Array.from(runNameCell?.querySelectorAll('code') ?? []).map((code) => code.textContent))
+        .toEqual(['same-run']);
+    });
+
+    it('shows a different custom name and its run ID', () => {
+      setMockJobs([makeScenarioJobItem('scenario-run-id', 'Succeeded', { customRunName: 'my-label' })]);
+      render(<JobsList {...defaultProps} />);
+
+      const runNameCell = screen.getByRole('list', { name: 'Scenario runs list' })
+        .querySelector('.jobs-list-summary-cell--run-name');
+      expect(Array.from(runNameCell?.querySelectorAll('code') ?? []).map((code) => code.textContent))
+        .toEqual(['my-label', 'scenario-run-id']);
+    });
+
+    it('falls back to the run ID when the custom name is blank', () => {
+      setMockJobs([makeScenarioJobItem('scenario-run-id', 'Succeeded', { customRunName: '   ' })]);
+      render(<JobsList {...defaultProps} />);
+
+      const runNameCell = screen.getByRole('list', { name: 'Scenario runs list' })
+        .querySelector('.jobs-list-summary-cell--run-name');
+      expect(Array.from(runNameCell?.querySelectorAll('code') ?? []).map((code) => code.textContent))
+        .toEqual(['scenario-run-id']);
+    });
+  });
+
   describe('Run Name Filter', () => {
     it('matches a graph run by name and shows the row', async () => {
       const user = userEvent.setup();
@@ -239,7 +273,7 @@ describe('JobsList', () => {
       await user.type(filterInput, 'scenario-run-id');
 
       await waitFor(() => {
-        expect(screen.getByText('scenario-run-id')).toBeInTheDocument();
+        expect(screen.getAllByText('scenario-run-id').length).toBeGreaterThan(0);
       });
     });
 
@@ -252,20 +286,140 @@ describe('JobsList', () => {
       await user.type(filterInput, 'my-label');
 
       await waitFor(() => {
-        expect(screen.getByText('my-label')).toBeInTheDocument();
+        expect(screen.getAllByText('my-label').length).toBeGreaterThan(0);
       });
     });
   });
 });
 
 describe('JobsList - Run actions menu', () => {
-  it('shows the actions kebab menu in the outer run row', () => {
+  it('keeps summary rows horizontal and truncates cells when the list is narrow', () => {
+    setMockJobs([makeScenarioJobItem('responsive-run', 'Succeeded')]);
+
+    render(<JobsList {...defaultProps} />);
+
+    const runsList = screen.getByRole('list', { name: 'Scenario runs list' });
+    expect(runsList).toHaveClass('pf-m-grid-none', 'pf-m-truncate', 'jobs-list-runs');
+    expect(runsList.querySelector('.jobs-list-summary-cell--status')).not.toBeNull();
+    expect(runsList.querySelector('.jobs-list-summary-cell--primary')).not.toBeNull();
+  });
+
+  it('shows Jobs before Run Name in standalone run rows', () => {
+    setMockJobs([makeScenarioJobItem('ordered-run', 'Succeeded')]);
+
+    render(<JobsList {...defaultProps} />);
+
+    const summaryCells = Array.from(
+      screen.getByRole('list', { name: 'Scenario runs list' }).querySelectorAll('.pf-v5-c-data-list__cell'),
+    );
+    const jobsIndex = summaryCells.findIndex((cell) => cell.textContent?.includes('Jobs:'));
+    const runNameIndex = summaryCells.findIndex((cell) => cell.textContent?.includes('Run Name:'));
+
+    expect(jobsIndex).toBeGreaterThanOrEqual(0);
+    expect(jobsIndex).toBeLessThan(runNameIndex);
+  });
+
+  it('shows the job counts and their descriptive tooltip', async () => {
+    const user = userEvent.setup();
+    const makeJob = (phase: ClusterJob['phase'], jobId: string): ClusterJob => ({
+      providerName: 'krkn-operator',
+      clusterName: 'cluster-1',
+      jobId,
+      podName: `pod-${jobId}`,
+      phase,
+    });
+    setMockJobs([makeScenarioJobItem('counts-run', 'Running', {
+      clusterJobs: [makeJob('Succeeded', 'succeeded'), makeJob('Failed', 'failed'), makeJob('Running', 'running')],
+    })]);
+
+    render(<JobsList {...defaultProps} />);
+
+    const jobCounts = screen.getByRole('list', { name: 'Scenario runs list' })
+      .querySelector('.jobs-list-job-counts');
+    expect(jobCounts?.textContent).toBe('1/1/1');
+    await user.hover(jobCounts as HTMLElement);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('1 succeeded, 1 failed, 1 running');
+  });
+
+  it('shows graph node counts and their descriptive tooltip', async () => {
+    const user = userEvent.setup();
+    setMockJobs([makeGraphJobItem('counted-workflow', 'Running', {
+      summary: { totalNodes: 9, completedNodes: 2, runningNodes: 3, failedNodes: 1, pendingNodes: 3 },
+    })]);
+
+    render(<JobsList {...defaultProps} />);
+
+    const graphNodeCounts = screen.getByRole('list', { name: 'Scenario runs list' })
+      .querySelector('.jobs-list-graph-node-counts');
+    expect(graphNodeCounts?.textContent).toBe('2/9');
+    await user.hover(graphNodeCounts as HTMLElement);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('2 completed, 1 failed, 3 running, 3 pending, 9 total');
+  });
+
+  it('keeps status and run identity in the summary, and truncates long owners', async () => {
+    const user = userEvent.setup();
+    const ownerUserId = 'a-very-long-owner-id-that-would-push-the-other-columns@example.com';
+    setMockJobs([makeScenarioJobItem('distinctive-run-id', 'Failed', {
+      customRunName: 'distinctive-label',
+      ownerUserId,
+    })]);
+
+    render(<JobsList {...defaultProps} />);
+
+    const runsList = screen.getByRole('list', { name: 'Scenario runs list' });
+    expect(runsList.querySelector('.jobs-list-summary-cell--status')).toHaveTextContent('Failed');
+    const compactIdentity = runsList.querySelector('.jobs-list-compact-run-identity');
+    expect(compactIdentity).toHaveTextContent('distinctive-label');
+    expect(compactIdentity).toHaveTextContent('distinctive-run-id');
+    const owner = runsList.querySelector('.jobs-list-owner-id');
+    expect(owner).toHaveTextContent(ownerUserId);
+    await user.hover(owner as HTMLElement);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(ownerUserId);
+  });
+
+  it('keeps Resiliency Score and Created as the final columns for both run types', () => {
+    setMockJobs([
+      makeGraphJobItem('aligned-workflow', 'Completed'),
+      makeScenarioJobItem('aligned-scenario', 'Succeeded'),
+    ]);
+
+    render(<JobsList {...defaultProps} />);
+
+    const rowCells = Array.from(
+      screen.getByRole('list', { name: 'Scenario runs list' }).querySelectorAll('.pf-v5-c-data-list__item-content'),
+    ).map((content) => Array.from(content.children));
+
+    expect(rowCells).toHaveLength(2);
+    for (const cells of rowCells) {
+      expect(cells[cells.length - 2]).toHaveClass('jobs-list-summary-cell--score');
+      expect(cells[cells.length - 1]).toHaveClass('jobs-list-summary-cell--created');
+    }
+  });
+
+  it('places the single run kebab menu in the dedicated row action area', () => {
     const runName = 'report-run-001';
     setMockJobs([makeScenarioJobItem(runName, 'Succeeded')]);
 
     render(<JobsList {...defaultProps} />);
 
-    expect(screen.getByRole('button', { name: `Actions for run ${runName}` })).toBeInTheDocument();
+    const actionsButton = screen.getByRole('button', { name: `Actions for run ${runName}` });
+    expect(actionsButton).toBeInTheDocument();
+    expect(actionsButton.closest('.pf-v5-c-data-list__item-action')).not.toBeNull();
+    expect(actionsButton.closest('.pf-v5-c-data-list__item-action')).toHaveStyle({ alignItems: 'center' });
+    expect(actionsButton).toHaveStyle({ width: '2.5rem', height: '2.5rem' });
+  });
+
+  it('places the workflow kebab menu in the same dedicated row action area', () => {
+    const runName = 'workflow-run-001';
+    setMockJobs([makeGraphJobItem(runName, 'Completed')]);
+
+    render(<JobsList {...defaultProps} />);
+
+    const actionsButton = screen.getByRole('button', { name: `Actions for run ${runName}` });
+    expect(actionsButton).toBeInTheDocument();
+    expect(actionsButton.closest('.pf-v5-c-data-list__item-action')).not.toBeNull();
+    expect(actionsButton.closest('.pf-v5-c-data-list__item-action')).toHaveStyle({ alignItems: 'center' });
+    expect(actionsButton).toHaveStyle({ width: '2.5rem', height: '2.5rem' });
   });
 });
 
@@ -381,7 +535,7 @@ describe('JobsList - Date/Time Filter', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('run-old')).not.toBeInTheDocument();
-      expect(screen.getByText('run-new')).toBeInTheDocument();
+      expect(screen.getAllByText('run-new').length).toBeGreaterThan(0);
     });
   });
 
@@ -398,7 +552,7 @@ describe('JobsList - Date/Time Filter', () => {
     fireEvent.change(screen.getByLabelText('End time'), { target: { value: '23:59:59' } });
 
     await waitFor(() => {
-      expect(screen.getByText('run-inside')).toBeInTheDocument();
+      expect(screen.getAllByText('run-inside').length).toBeGreaterThan(0);
       expect(screen.queryByText('run-outside')).not.toBeInTheDocument();
     });
   });
@@ -415,7 +569,7 @@ describe('JobsList - Date/Time Filter', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('graphrun-old')).not.toBeInTheDocument();
-      expect(screen.getByText('run-control')).toBeInTheDocument();
+      expect(screen.getAllByText('run-control').length).toBeGreaterThan(0);
     });
   });
 
@@ -430,7 +584,7 @@ describe('JobsList - Date/Time Filter', () => {
     await user.type(screen.getByRole('textbox', { name: 'Start date' }), '2026-01-15');
 
     await waitFor(() => {
-      expect(screen.getByText('graphrun-inside')).toBeInTheDocument();
+      expect(screen.getAllByText('graphrun-inside').length).toBeGreaterThan(0);
     });
   });
 
@@ -466,8 +620,8 @@ describe('JobsList - Date/Time Filter', () => {
     await user.click(screen.getByRole('button', { name: /Clear all filters/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('run-old')).toBeInTheDocument();
-      expect(screen.getByText('run-new')).toBeInTheDocument();
+      expect(screen.getAllByText('run-old').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('run-new').length).toBeGreaterThan(0);
     });
   });
 });
