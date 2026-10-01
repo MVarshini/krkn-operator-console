@@ -23,6 +23,8 @@ export interface WizardStepConfig {
   name: string;
   component: ReactNode;
   isNextDisabled?: boolean;
+  isStepDisabled?: boolean;
+  onEnter?: () => void;
 }
 
 interface WizardStepperProps {
@@ -57,13 +59,17 @@ export function WizardStepper({
       if (activeElement && activeElement !== document.body) {
         activeElement.blur();
       }
+    } else {
+      setActiveStepIndex(0);
     }
   }, [isOpen]);
 
   const handleNext = () => {
     if (currentStep.isNextDisabled) return;
     if (!isLastStep) {
-      setActiveStepIndex(prev => prev + 1);
+      const nextStepIndex = activeStepIndex + 1;
+      setActiveStepIndex(nextStepIndex);
+      steps[nextStepIndex]?.onEnter?.();
     } else {
       onSave();
     }
@@ -75,12 +81,16 @@ export function WizardStepper({
 
   const handleBack = () => {
     if (!isFirstStep) {
-      setActiveStepIndex(prev => prev - 1);
+      const previousStepIndex = activeStepIndex - 1;
+      setActiveStepIndex(previousStepIndex);
+      steps[previousStepIndex]?.onEnter?.();
     }
   };
 
   const handleStepClick = (stepIndex: number) => {
+    if (stepIndex === activeStepIndex || steps[stepIndex]?.isStepDisabled) return;
     setActiveStepIndex(stepIndex);
+    steps[stepIndex]?.onEnter?.();
   };
 
   const handleModalClose = () => {
@@ -130,6 +140,7 @@ export function WizardStepper({
                 id={step.id}
                 titleId={`${step.id}-title`}
                 aria-label={step.name}
+                aria-disabled={step.isStepDisabled || undefined}
                 isCurrent={stepIndex === activeStepIndex}
                 onClick={() => handleStepClick(stepIndex)}
               >
