@@ -3,6 +3,53 @@
  *
  * Replaces PatternFly Wizard to avoid infinite render loop bug.
  * Provides a simple multi-step form with navigation controls.
+ *
+ * A step may mark its Next button as loading via `isNextLoading`: the button
+ * shows a spinner with a "Loading…" label and blocks advancing (including the
+ * Enter key) until loading clears. Use it for steps that fetch data on enter so
+ * the disabled Next button reads as "busy" rather than broken.
+ *
+ * @example
+ * function Example() {
+ *   const [scenarios, setScenarios] = useState<string[]>([]);
+ *   const [loading, setLoading] = useState(false);
+ *
+ *   const loadScenarios = () => {
+ *     setLoading(true);
+ *     fetchScenarios().then((list) => {
+ *       setScenarios(list);
+ *       setLoading(false);
+ *     });
+ *   };
+ *
+ *   const steps: WizardStepConfig[] = [
+ *     {
+ *       id: 'registry',
+ *       name: 'Registry',
+ *       component: <RegistryStep />,
+ *     },
+ *     {
+ *       id: 'scenario',
+ *       name: 'Scenario',
+ *       component: <ScenarioList scenarios={scenarios} />,
+ *       onEnter: loadScenarios,
+ *       // While loading: spinner + "Loading…", Next blocked.
+ *       isNextLoading: loading,
+ *       // After loading: enabled once a scenario is chosen (normal continuation).
+ *       isNextDisabled: loading || scenarios.length === 0,
+ *     },
+ *   ];
+ *
+ *   return (
+ *     <WizardStepper
+ *       isOpen
+ *       title="Configure Scenario"
+ *       steps={steps}
+ *       onClose={handleClose}
+ *       onSave={handleSave}
+ *     />
+ *   );
+ * }
  */
 
 import { useState, useEffect, ReactNode, KeyboardEvent } from 'react';

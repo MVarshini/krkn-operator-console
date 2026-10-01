@@ -12,11 +12,11 @@ vi.mock('../../services/cloudCredentialsApi');
 vi.mock('../DynamicFormBuilder', () => ({ DynamicFormBuilder: () => null }));
 vi.mock('../ScenarioParameterSections', () => ({ ScenarioParameterSections: () => null }));
 
-const makeDetail = (name: string): ScenarioDetail => ({
+const makeDetail = (name: string, digest = 'sha256:abc'): ScenarioDetail => ({
   name,
   title: `${name} title`,
   description: 'desc',
-  digest: 'sha256:abc',
+  digest,
   fields: [
     {
       name: 'namespace',
@@ -34,6 +34,8 @@ const makeDetail = (name: string): ScenarioDetail => ({
 function renderStep(scenarioName: string, registryName = '', overrides: Partial<{
   onLoadStatusChange: (status: 'loading' | 'loaded' | 'error') => void;
   onDefaultValuesLoad: (defaults: ScenarioFormValues) => void;
+  sessionId: number;
+  expectedDigest: string;
 }> = {}) {
   return render(
     <ScenarioConfigStep
@@ -46,6 +48,8 @@ function renderStep(scenarioName: string, registryName = '', overrides: Partial<
       onGlobalFormChange={vi.fn()}
       onDefaultValuesLoad={overrides.onDefaultValuesLoad ?? vi.fn()}
       onLoadStatusChange={overrides.onLoadStatusChange ?? vi.fn()}
+      sessionId={overrides.sessionId ?? 1}
+      expectedDigest={overrides.expectedDigest}
     />,
   );
 }
@@ -106,5 +110,71 @@ describe('ScenarioConfigStep caching', () => {
     );
 
     expect(operatorApi.getScenarioDetail).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses the cache across sessions when the digest matches', async () => {
+    vi.mocked(operatorApi.getScenarioDetail).mockResolvedValue(
+      makeDetail('digest-match', 'sha256:v1'),
+    );
+
+    const first = renderStep('digest-match', 'corp-registry', {
+      sessionId: 1,
+      expectedDigest: 'sha256:v1',
+    });
+    await waitFor(() =>
+      expect(screen.getByText('digest-match title')).toBeInTheDocument(),
+    );
+    expect(operatorApi.getScenarioDetail).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    // New session, same digest -> reuse without refetch.
+    renderStep('digest-match', 'corp-registry', {
+      sessionId: 2,
+      expectedDigest: 'sha256:v1',
+    });
+    await waitFor(() =>
+      expect(screen.getByText('digest-match title')).toBeInTheDocument(),
+    );
+    expect(operatorApi.getScenarioDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches across sessions when the digest changed', async () => {
+    vi.mocked(operatorApi.getScenarioDetail)
+      .mockResolvedValueOnce(makeDetail('digest-change', 'sha256:old'))
+      .mockResolvedValueOnce(makeDetail('digest-change', 'sha256:new'));
+
+    const first = renderStep('digest-change', 'corp-registry', {
+      sessionId: 1,
+      expectedDigest: 'sha256:old',
+    });
+    await waitFor(() =>
+      expect(screen.getByText('digest-change title')).toBeInTheDocument(),
+    );
+    expect(operatorApi.getScenarioDetail).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    // New session, image re-pushed -> digest differs -> refetch.
+    renderStep('digest-change', 'corp-registry', {
+      sessionId: 2,
+      expectedDigest: 'sha256:new',
+    });
+    await waitFor(() =>
+      expect(operatorApi.getScenarioDetail).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it('refetches across sessions when no digest is available', async () => {
+    const first = renderStep('no-digest', 'corp-registry', { sessionId: 1 });
+    await waitFor(() =>
+      expect(screen.getByText('no-digest title')).toBeInTheDocument(),
+    );
+    expect(operatorApi.getScenarioDetail).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    // New session, no digest to validate against -> refetch, no stale reuse.
+    renderStep('no-digest', 'corp-registry', { sessionId: 2 });
+    await waitFor(() =>
+      expect(operatorApi.getScenarioDetail).toHaveBeenCalledTimes(2),
+    );
   });
 });

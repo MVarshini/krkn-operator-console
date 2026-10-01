@@ -29,11 +29,40 @@ import type { ScenarioDetail, ScenarioFormValues, ScenariosRequest, ScenarioGlob
  * when nothing changed. Only the field schema is cached here; user-entered form
  * values live in the parent modal state and are unaffected. A changed
  * scenario/registry uses a different key.
+ *
+ * Entries are validated across modal sessions by image digest: a cached detail
+ * is reused only when it was loaded in the current session (step-to-step
+ * navigation) or when its digest matches the digest reported by the freshly
+ * fetched scenario list. If the image digest changed (or no digest is
+ * available), the entry is refetched instead of reused, so a moved registry
+ * repository or a re-pushed image is not served stale.
  */
-const scenarioDetailCache = new Map<string, ScenarioDetail>();
+interface ScenarioDetailCacheEntry {
+  detail: ScenarioDetail;
+  digest?: string;
+  sessionId: number;
+}
+
+const scenarioDetailCache = new Map<string, ScenarioDetailCacheEntry>();
 
 const scenarioDetailCacheKey = (scenarioName: string, registryName: string): string =>
   `${registryName}::${scenarioName}`;
+
+/**
+ * Decide whether a cache entry may be reused.
+ * - Same session: always reuse (preserve within-session step navigation).
+ * - Cross session: reuse only when a digest is known and matches the entry's.
+ */
+const canReuseCacheEntry = (
+  entry: ScenarioDetailCacheEntry,
+  sessionId: number,
+  expectedDigest?: string,
+): boolean => {
+  if (entry.sessionId === sessionId) {
+    return true;
+  }
+  return expectedDigest !== undefined && entry.digest === expectedDigest;
+};
 
 const extractDefaultValues = (detail: ScenarioDetail): ScenarioFormValues => {
   const defaults: ScenarioFormValues = {};
@@ -59,6 +88,10 @@ interface ScenarioConfigStepProps {
   onLoadStatusChange?: (status: 'loading' | 'loaded' | 'error') => void;
   cloudCredentialRef?: string;
   onCloudCredentialRefChange?: (name: string) => void;
+  /** Identifies the current modal session; bumped each time the modal opens. */
+  sessionId: number;
+  /** Image digest from the freshly fetched scenario list, used to validate cache. */
+  expectedDigest?: string;
 }
 
 export function ScenarioConfigStep({
@@ -73,6 +106,8 @@ export function ScenarioConfigStep({
   onLoadStatusChange,
   cloudCredentialRef: cloudCredentialRefProp = '',
   onCloudCredentialRefChange,
+  sessionId,
+  expectedDigest,
 }: ScenarioConfigStepProps) {
   const [scenarioDetail, setScenarioDetail] = useState<ScenarioDetail | null>(null);
   const [scenarioGlobals, setScenarioGlobals] = useState<ScenarioGlobals | null>(null);
@@ -100,15 +135,16 @@ export function ScenarioConfigStep({
   useEffect(() => {
     let mounted = true;
 
-    // Restore from cache on remount (step navigation) without a refetch.
+    // Restore from cache on remount (step navigation) without a refetch, but
+    // only when the entry is still valid for the current session/digest.
     const cacheKey = scenarioDetailCacheKey(scenarioName, registryName);
-    const cachedDetail = scenarioDetailCache.get(cacheKey);
-    if (cachedDetail) {
-      setScenarioDetail(cachedDetail);
+    const cachedEntry = scenarioDetailCache.get(cacheKey);
+    if (cachedEntry && canReuseCacheEntry(cachedEntry, sessionId, expectedDigest)) {
+      setScenarioDetail(cachedEntry.detail);
       setLoading(false);
       setError(null);
       onLoadStatusChange?.('loaded');
-      onDefaultValuesLoad?.(extractDefaultValues(cachedDetail));
+      onDefaultValuesLoad?.(extractDefaultValues(cachedEntry.detail));
       return () => {
         mounted = false;
       };
@@ -126,7 +162,11 @@ export function ScenarioConfigStep({
         const detail = await operatorApi.getScenarioDetail(scenarioName, config);
 
         if (mounted) {
-          scenarioDetailCache.set(cacheKey, detail);
+          scenarioDetailCache.set(cacheKey, {
+            detail,
+            digest: detail.digest,
+            sessionId,
+          });
           setScenarioDetail(detail);
           onLoadStatusChange?.('loaded');
 
@@ -150,7 +190,7 @@ export function ScenarioConfigStep({
     return () => {
       mounted = false;
     };
-  }, [scenarioName, registryName, onDefaultValuesLoad, onLoadStatusChange]);
+  }, [scenarioName, registryName, sessionId, expectedDigest, onDefaultValuesLoad, onLoadStatusChange]);
 
   // Fetch global parameters when checkbox is toggled
   useEffect(() => {
