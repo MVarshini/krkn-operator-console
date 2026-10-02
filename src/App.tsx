@@ -1,4 +1,4 @@
-import { Page, PageSection, Masthead, MastheadMain, MastheadBrand, MastheadToggle, Alert, AlertActionCloseButton, AlertGroup, Button, Modal, ModalVariant } from '@patternfly/react-core';
+import { Page, PageSection, Masthead, MastheadMain, MastheadBrand, MastheadToggle, Alert, AlertActionCloseButton, AlertGroup, Button, Modal, ModalVariant, Spinner } from '@patternfly/react-core';
 import { BarsIcon } from '@patternfly/react-icons';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +23,7 @@ import { usersApi } from './services/usersApi';
 import { useNotifications } from './hooks';
 import type { SelectedCluster, UpdateUserRequest, ChangePasswordRequest, ScenarioRunState } from './types/api';
 import { buildRerunIntent } from './utils/rerunIntent';
+import { loadGraphRunReplay } from './utils/graphRunReplay';
 
 function App() {
   const { state, dispatch } = useAppContext();
@@ -139,8 +140,15 @@ function App() {
     }
   };
 
-  const handleReplayWorkflow = (workflow: import('./types/api').StudioWorkflow, categories?: string[]) => {
-    dispatch({ type: 'OPEN_STUDIO_REPLAY', payload: { workflow, categories } });
+  const handleReplayWorkflow = async (graphRunName: string) => {
+    dispatch({ type: 'START_WORKFLOW_REPLAY' });
+    try {
+      const { workflow, categories } = await loadGraphRunReplay(graphRunName);
+      dispatch({ type: 'OPEN_STUDIO_REPLAY', payload: { workflow, categories } });
+    } catch (error) {
+      dispatch({ type: 'WORKFLOW_REPLAY_FAILED' });
+      showError('Failed to replay workflow', error instanceof Error ? error.message : 'Unable to load workflow');
+    }
   };
 
   const handleCreateJob = () => {
@@ -223,6 +231,8 @@ function App() {
               onDeleteScenarioRun={handleDeleteScenarioRun}
               onDeleteJob={handleDeleteJob}
               onRerunScenario={handleRerunScenario}
+              onLoadRunDetails={(run) => fetchRunDetails(run.scenarioRunName, run)}
+              scenarioRunDetails={state.scenarioRuns}
               expandedGraphRunIds={state.expandedGraphRunIds}
               onToggleGraphRunAccordion={(graphRunName) =>
                 dispatch({ type: 'TOGGLE_GRAPH_RUN_ACCORDION', payload: { graphRunName } })
@@ -515,6 +525,39 @@ function App() {
         )}
         <PageSection isFilled>{renderContent()}</PageSection>
       </div>
+
+      {state.isWorkflowReplayLoading && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.38)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              padding: '1rem 1.25rem',
+              color: 'var(--pf-v5-global--Color--100)',
+              backgroundColor: 'var(--pf-v5-global--BackgroundColor--100)',
+              border: '1px solid var(--pf-v5-global--BorderColor--100)',
+              borderRadius: 'var(--pf-v5-global--BorderRadius--sm)',
+              boxShadow: 'var(--pf-v5-global--BoxShadow--lg)',
+            }}
+          >
+            <Spinner size="md" aria-label="Loading workflow" />
+            <span>Opening workflow in Chaos Studio…</span>
+          </div>
+        </div>
+      )}
 
       <Modal
         variant={ModalVariant.medium}

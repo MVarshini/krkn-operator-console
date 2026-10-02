@@ -45,7 +45,6 @@ import {
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
   TrashIcon,
-  RedoIcon,
   LockIcon,
   TopologyIcon,
 } from '@patternfly/react-icons';
@@ -65,13 +64,26 @@ import { toGraphClusterScores, SCORE_CALCULATING } from '../utils/resiliency';
 import { TERMINAL_PHASES } from '../hooks/useScenarioRunsPoller';
 import './JobsList.css';
 
-import type { CategoryResponse, ScenarioRunState, ScenarioRunPhase, ClusterJobPhase, GraphRunSummary, GraphClusterScore, UnifiedJobItem, StudioWorkflow } from '../types/api';
+import type {
+  CategoryResponse,
+  ClusterJob,
+  ScenarioRunState,
+  ScenarioRunPhase,
+  ClusterJobPhase,
+  GraphRunListItem,
+  GraphRunSummary,
+  GraphClusterScore,
+  UnifiedJobItem,
+} from '../types/api';
+
+const GRAPH_RUN_TERMINAL_PHASES: GraphRunListItem['phase'][] = ['Completed', 'Failed', 'PartiallyFailed'];
 
 export type UnifiedRunItem =
   | {
       type: 'graph';
       categories: string[];
       graphRunName: string;
+      graphRunPhase: GraphRunListItem['phase'];
       nodes: ScenarioRunState[];
       phase: ScenarioRunPhase;
       createdAt: string;
@@ -96,6 +108,7 @@ function toUnifiedRunItem(item: UnifiedJobItem): UnifiedRunItem {
         type: 'graph',
         categories: item.categories || [],
         graphRunName: item.name,
+        graphRunPhase: gr.phase,
         nodes: [],
         phase,
         createdAt: item.createdAt,
@@ -110,6 +123,7 @@ function toUnifiedRunItem(item: UnifiedJobItem): UnifiedRunItem {
       type: 'graph',
       categories: item.categories || [],
       graphRunName: item.name,
+      graphRunPhase: 'Pending',
       nodes: [],
       phase: 'Pending',
       createdAt: item.createdAt,
@@ -165,10 +179,12 @@ interface JobsListProps {
   onDeleteScenarioRun: (scenarioRunName: string) => Promise<void>;
   onDeleteJob: (jobId: string) => Promise<void>;
   onRerunScenario: (run: ScenarioRunState, jobId: string) => void;
+  onLoadRunDetails?: (run: ScenarioRunState) => void;
+  scenarioRunDetails?: ScenarioRunState[];
   expandedGraphRunIds: Set<string>;
   onToggleGraphRunAccordion: (graphRunName: string) => void;
   onDeleteGraphRun: (graphRunName: string) => Promise<void>;
-  onReplayWorkflow?: (workflow: StudioWorkflow, categories?: string[]) => void;
+  onReplayWorkflow?: (graphRunName: string) => Promise<void>;
   loadingRunDetails: Set<string>;
 }
 
@@ -180,6 +196,8 @@ export function JobsList({
   onDeleteScenarioRun,
   onDeleteJob,
   onRerunScenario,
+  onLoadRunDetails,
+  scenarioRunDetails = [],
   expandedGraphRunIds,
   onToggleGraphRunAccordion,
   onDeleteGraphRun,
@@ -474,6 +492,10 @@ export function JobsList({
   const unifiedRuns = useMemo((): UnifiedRunItem[] => {
     return jobs.map(toUnifiedRunItem);
   }, [jobs]);
+  const scenarioRunDetailsByName = useMemo(
+    () => new Map(scenarioRunDetails.map((run) => [run.scenarioRunName, run])),
+    [scenarioRunDetails],
+  );
 
   // Get unique owner user IDs from current page for autocomplete
   const uniqueOwners = useMemo(() => {
@@ -528,6 +550,12 @@ export function JobsList({
     onDelete,
     runId,
     runPhase,
+    replayJobs,
+    isReplayJobsLoading,
+    onOpenReplayJobs,
+    onReplayScenario,
+    onReplayWorkflow,
+    isWorkflowReplayDisabled,
   }: {
     actionType: 'graph' | 'run';
     runName: string;
@@ -537,6 +565,12 @@ export function JobsList({
     onDelete: () => void;
     runId?: string;
     runPhase?: string;
+    replayJobs?: ClusterJob[];
+    isReplayJobsLoading?: boolean;
+    onOpenReplayJobs?: () => void;
+    onReplayScenario?: (jobId: string) => void;
+    onReplayWorkflow?: () => Promise<void>;
+    isWorkflowReplayDisabled?: boolean;
   }) => (
     <DataListAction
       id={`actions-${actionType}-${runName}`}
@@ -558,6 +592,12 @@ export function JobsList({
         onOpenCategories={() => { void loadCategories(); }}
         onToggleCategory={onToggleCategory}
         onDelete={onDelete}
+        replayJobs={replayJobs}
+        isReplayJobsLoading={isReplayJobsLoading}
+        onOpenReplayJobs={onOpenReplayJobs}
+        onReplayScenario={onReplayScenario}
+        onReplayWorkflow={onReplayWorkflow}
+        isWorkflowReplayDisabled={isWorkflowReplayDisabled}
       />
     </DataListAction>
   );
@@ -889,7 +929,7 @@ export function JobsList({
                               <div style={{ marginBottom: '0.25rem' }}>
                                 <strong>Status:</strong>
                               </div>
-                              <Label color={phaseDisplay.color} icon={phaseDisplay.icon}>
+                              <Label className="jobs-list-compact-label" isCompact color={phaseDisplay.color} icon={phaseDisplay.icon}>
                                 {phaseDisplay.label}
                               </Label>
                             </div>
@@ -955,7 +995,7 @@ export function JobsList({
                                 <Tooltip
                                   content={`${item.summary.completedNodes} completed, ${item.summary.failedNodes} failed, ${item.summary.runningNodes} running, ${item.summary.pendingNodes} pending, ${item.summary.totalNodes} total`}
                                 >
-                                  <Label color="blue" icon={<TopologyIcon />}>
+                                  <Label className="jobs-list-compact-label" isCompact color="blue" icon={<TopologyIcon />}>
                                     <span className="jobs-list-graph-node-counts">
                                       <span className="jobs-list-graph-node-counts__completed">
                                         <CheckCircleIcon aria-hidden="true" />
@@ -980,6 +1020,8 @@ export function JobsList({
                                 <strong>Resiliency Score:</strong>
                               </div>
                               <ResiliencyScoreTooltip
+                                isCompact
+                                labelClassName="jobs-list-compact-label"
                                 scores={item.resiliencyScores}
                                 baseline={item.resiliencyScoreBaseline}
                               />
@@ -1016,8 +1058,10 @@ export function JobsList({
                         onToggleCategory: (category) => {
                           void handleToggleRunCategory('graph-runs', item.graphRunName, graphCategoryNames, category);
                         },
-                        onDelete: () => setConfirmDeleteRun(item.graphRunName),
-                      })}
+                      onDelete: () => setConfirmDeleteRun(item.graphRunName),
+                      onReplayWorkflow: onReplayWorkflow ? () => onReplayWorkflow(item.graphRunName) : undefined,
+                      isWorkflowReplayDisabled: !GRAPH_RUN_TERMINAL_PHASES.includes(item.graphRunPhase),
+                    })}
                     </DataListItemRow>
 
                     {/* GraphRun Expanded Content - Show DAG visualization */}
@@ -1027,7 +1071,7 @@ export function JobsList({
                       isHidden={!isGraphExpanded}
                     >
                       {isGraphExpanded && (
-                        <GraphRunDetail graphRunName={item.graphRunName} onReplayWorkflow={onReplayWorkflow} />
+                        <GraphRunDetail graphRunName={item.graphRunName} />
                       )}
                     </DataListContent>
                   </DataListItem>
@@ -1035,7 +1079,11 @@ export function JobsList({
               }
 
               // Handle standalone ScenarioRun
-              const run = item.run;
+              const listedRun = item.run;
+              const contextRun = scenarioRunDetailsByName.get(listedRun.scenarioRunName);
+              const run = listedRun.clusterJobs.length === 0 && contextRun
+                ? { ...listedRun, ...contextRun }
+                : listedRun;
               const customRunName = run.customRunName?.trim();
               const scenarioRunName = run.scenarioRunName.trim();
               const isRunExpanded = expandedRunIds.has(run.scenarioRunName);
@@ -1063,7 +1111,7 @@ export function JobsList({
                             <div style={{ marginBottom: '0.25rem' }}>
                               <strong>Status:</strong>
                             </div>
-                            <Label color={runPhaseDisplay.color} icon={runPhaseDisplay.icon}>
+                            <Label className="jobs-list-compact-label" isCompact color={runPhaseDisplay.color} icon={runPhaseDisplay.icon}>
                               {runPhaseDisplay.label}
                             </Label>
                           </div>
@@ -1077,21 +1125,24 @@ export function JobsList({
                               </strong>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <code
-                                className="jobs-list-run-primary-value"
-                                style={{
-                                  fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
-                                  fontSize: 'var(--pf-v5-global--FontSize--sm)',
-                                  backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
-                                  padding: '0.125rem 0.5rem',
-                                  borderRadius: 'var(--pf-v5-global--BorderRadius--sm)',
-                                  display: 'inline-block',
-                                  border: '1px solid var(--pf-v5-global--BorderColor--100)',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {run.scenarioName}
-                              </code>
+                              <Tooltip content={`Run ID: ${scenarioRunName}`}>
+                                <code
+                                  className="jobs-list-run-primary-value"
+                                  aria-label={`Scenario ${run.scenarioName}; run ID ${scenarioRunName}`}
+                                  style={{
+                                    fontFamily: 'var(--pf-v5-global--FontFamily--monospace)',
+                                    fontSize: 'var(--pf-v5-global--FontSize--sm)',
+                                    backgroundColor: 'var(--pf-v5-global--BackgroundColor--200)',
+                                    padding: '0.125rem 0.5rem',
+                                    borderRadius: 'var(--pf-v5-global--BorderRadius--sm)',
+                                    display: 'inline-block',
+                                    border: '1px solid var(--pf-v5-global--BorderColor--100)',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {run.scenarioName}
+                                </code>
+                              </Tooltip>
                               {run.registryName && (
                                 <Tooltip content={<>Scenario running on <strong><em>{run.registryName}</em></strong> private registry</>}>
                                   <LockIcon
@@ -1100,23 +1151,16 @@ export function JobsList({
                                 </Tooltip>
                               )}
                             </div>
-                            <Tooltip
-                              content={customRunName && customRunName !== scenarioRunName
-                                ? `Run name: ${customRunName}; run ID: ${scenarioRunName}`
-                                : `Run ID: ${scenarioRunName}`}
-                            >
-                              <div
-                                className="jobs-list-compact-run-identity"
-                                aria-label={customRunName && customRunName !== scenarioRunName
-                                  ? `Run name ${customRunName}, run ID ${scenarioRunName}`
-                                  : `Run ID ${scenarioRunName}`}
-                              >
-                                {customRunName && customRunName !== scenarioRunName && (
+                            {customRunName && customRunName !== scenarioRunName && (
+                              <Tooltip content={`Run name: ${customRunName}; run ID: ${scenarioRunName}`}>
+                                <div
+                                  className="jobs-list-compact-run-identity"
+                                  aria-label={`Run name ${customRunName}`}
+                                >
                                   <code>{customRunName}</code>
-                                )}
-                                <code>{scenarioRunName}</code>
-                              </div>
-                            </Tooltip>
+                                </div>
+                              </Tooltip>
+                            )}
                           </div>
                         </DataListCell>,
                         <DataListCell key="owner" width={2} className="jobs-list-summary-cell--owner">
@@ -1152,7 +1196,7 @@ export function JobsList({
                             <Tooltip
                               content={`${run.successfulJobs} succeeded, ${run.failedJobs} failed, ${run.runningJobs} running`}
                             >
-                              <Label color="blue" icon={<HiOutlineRocketLaunch />}>
+                              <Label className="jobs-list-compact-label" isCompact color="blue" icon={<HiOutlineRocketLaunch />}>
                                 <span className="jobs-list-job-counts">
                                   <span className="jobs-list-job-counts__succeeded">
                                     <CheckCircleIcon aria-hidden="true" />
@@ -1234,6 +1278,8 @@ export function JobsList({
                               <strong>Resiliency Score:</strong>
                             </div>
                             <ResiliencyScoreTooltip
+                              isCompact
+                              labelClassName="jobs-list-compact-label"
                               scores={
                                 run.resiliencyScores
                                   ? toGraphClusterScores(run.resiliencyScores)
@@ -1278,6 +1324,12 @@ export function JobsList({
                       onDelete: () => setConfirmDeleteRun(run.scenarioRunName),
                       runId: run.scenarioRunName,
                       runPhase: run.phase,
+                      replayJobs: run.clusterJobs,
+                      isReplayJobsLoading: loadingRunDetails.has(run.scenarioRunName),
+                      onOpenReplayJobs: () => {
+                        if (run.clusterJobs.length === 0) onLoadRunDetails?.(run);
+                      },
+                      onReplayScenario: (jobId) => onRerunScenario(run, jobId),
                     })}
                   </DataListItemRow>
 
@@ -1370,15 +1422,6 @@ export function JobsList({
                                           </DataListCell>,
                                           <DataListCell key="actions" width={1}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '0.25rem' }}>
-                                              {job.completionTime && (
-                                                <Button
-                                                  variant="plain"
-                                                  aria-label="Re-run scenario"
-                                                  onClick={() => onRerunScenario(run, job.jobId)}
-                                                  icon={<RedoIcon style={{ fontSize: '1.2rem' }} />}
-                                                  style={{ color: 'var(--pf-v5-global--link--Color)' }}
-                                                />
-                                              )}
                                               {job.phase === 'Running' && (
                                                 <Button
                                                   variant="plain"

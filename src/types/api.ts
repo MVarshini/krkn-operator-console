@@ -510,6 +510,7 @@ export interface AppState {
   studioReplayWorkflow?: StudioWorkflow | null;
   /** Categories restored when opening a graph run replay in Chaos Studio. */
   studioReplayCategories?: string[] | null;
+  isWorkflowReplayLoading?: boolean;
 
   // Workflow state (create job flow)
   clusters: ClustersResponse['targetData'] | null;
@@ -576,6 +577,8 @@ export type AppAction =
   | { type: 'LOAD_GRAPH_RUNS_SUCCESS'; payload: { runs: GraphRunState[] } }
   | { type: 'TOGGLE_GRAPH_RUN_ACCORDION'; payload: { graphRunName: string } }
   | { type: 'DELETE_GRAPH_RUN'; payload: { graphRunName: string } }
+  | { type: 'START_WORKFLOW_REPLAY' }
+  | { type: 'WORKFLOW_REPLAY_FAILED' }
   | { type: 'OPEN_STUDIO_REPLAY'; payload: { workflow: StudioWorkflow; categories?: string[] } }
 
   // Workflow control (NEW)
