@@ -747,7 +747,14 @@ export function GraphRunDetail({ graphRunName }: GraphRunDetailProps) {
   // studioLayout (auto-laid-out) alongside the executable graph.
   const handleExport = () => {
     try {
-      const payload = buildStudioExport(graphRunDetail.spec.graph, { graphRunName });
+      // Preserve graph-level resiliency settings so a re-import restores them.
+      const resiliency = graphRunDetail.spec.resiliencyScoreEnabled
+        ? {
+            baseline: graphRunDetail.spec.resiliencyScoreBaseline ?? 0,
+            mountPath: graphRunDetail.spec.resiliencyMountPath ?? '/etc/krkn/metrics.yaml',
+          }
+        : undefined;
+      const payload = buildStudioExport(graphRunDetail.spec.graph, { graphRunName }, resiliency);
       downloadJson(payload, `chaos-workflow-${graphRunName}-${Date.now()}.json`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to export workflow');

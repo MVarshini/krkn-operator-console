@@ -24,6 +24,7 @@ import type {
   StudioEdge,
   StudioWorkflow,
   GraphScenarioNode,
+  ResiliencyScoreConfig,
 } from '../../types/api';
 import { graphRunsApi } from '../../services/graphRunsApi';
 
@@ -83,7 +84,13 @@ function assertValidNodeIds(nodeIds: string[]): void {
       );
     }
     const sanitized = sanitizeNodeIDForKubernetes(nodeId);
-    if (sanitized === '' || sanitized === 'empty' || sanitized === 'node') {
+    // 'empty'/'node' are synthesized fallbacks for IDs that collapse to nothing.
+    // Reject only when synthesized, not when the ID legitimately sanitizes to
+    // that value (e.g. literal "node", "empty", or "Node").
+    if (
+      sanitized === '' ||
+      ((sanitized === 'empty' || sanitized === 'node') && sanitized !== nodeId.toLowerCase())
+    ) {
       throw new Error(
         `Invalid node ID "${nodeId}": sanitizes to invalid value "${sanitized}"; use alphanumeric characters, hyphens, underscores, or dots`
       );
@@ -141,7 +148,13 @@ function validateStudioLayout(wf: StudioWorkflow): void {
     }
 
     if (n.status === 'configured') {
-      if (!n.config || typeof n.config !== 'object' || !n.config.scenarioName) {
+      if (
+        !n.config ||
+        typeof n.config !== 'object' ||
+        !n.config.scenarioName ||
+        !n.config.registryConfig ||
+        typeof n.config.registryConfig !== 'object'
+      ) {
         throw new Error(
           `Invalid workflow format: configured node "${n.nodeId}" is missing its configuration`
         );
@@ -302,6 +315,7 @@ export function graphNodeToStudioConfig(
     signature_status: node.scenario?.signature_status,
     scenarioFormValues: { ...(node.env ?? {}) },
     volumes: node.volumes,
+    resiliencyWeight: node.resiliencyWeight,
     cloudCredentialRef: node.cloudCredentialRef,
   };
 }
@@ -466,7 +480,8 @@ export function assembleExportFile(
  */
 export function buildStudioExport(
   graph: { [nodeId: string]: GraphScenarioNode },
-  meta?: { [key: string]: unknown }
+  meta?: { [key: string]: unknown },
+  resiliency?: ResiliencyScoreConfig
 ): StudioExportFile {
   const cleanGraph: { [nodeId: string]: GraphScenarioNode } = {};
   for (const [nodeId, node] of Object.entries(graph ?? {})) {
@@ -475,6 +490,10 @@ export function buildStudioExport(
   }
 
   const studioLayout = reconstructWorkflowFromGraph(cleanGraph);
+  // Carry graph-level resiliency settings so re-import restores the same config.
+  if (resiliency) {
+    studioLayout.resiliencyScoreConfig = resiliency;
+  }
 
   return assembleExportFile(cleanGraph, studioLayout, meta);
 }

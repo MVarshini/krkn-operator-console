@@ -408,6 +408,34 @@ describe('GraphRunDetail', () => {
       expect(mockDownloadJson).not.toHaveBeenCalled();
       alertSpy.mockRestore();
     });
+
+    it('embeds graph-level resiliency settings in the export', async () => {
+      mockGetGraphRun.mockResolvedValue(makeMockDetail());
+      render(<GraphRunDetail graphRunName="test-graph-run" />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Export JSON' }));
+
+      await waitFor(() => expect(mockDownloadJson).toHaveBeenCalledTimes(1));
+      const [payload] = mockDownloadJson.mock.calls[0];
+      expect(payload._studioLayout.resiliencyScoreConfig).toEqual({
+        baseline: 80.0,
+        mountPath: '/etc/krkn/metrics.yaml',
+      });
+    });
+
+    it('omits resiliency config when the run has scoring disabled', async () => {
+      const detail = makeMockDetail({
+        spec: { ...makeMockDetail().spec, resiliencyScoreEnabled: false },
+      });
+      mockGetGraphRun.mockResolvedValue(detail);
+      render(<GraphRunDetail graphRunName="test-graph-run" />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Export JSON' }));
+
+      await waitFor(() => expect(mockDownloadJson).toHaveBeenCalledTimes(1));
+      const [payload] = mockDownloadJson.mock.calls[0];
+      expect(payload._studioLayout.resiliencyScoreConfig).toBeUndefined();
+    });
   });
 
   describe('Graph Rendering', () => {

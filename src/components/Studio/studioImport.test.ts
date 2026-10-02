@@ -377,4 +377,93 @@ describe('buildStudioExport', () => {
     };
     expect(() => buildStudioExport(graph)).toThrow(/Invalid workflow graph/);
   });
+
+  it('embeds graph-level resiliency settings when provided', () => {
+    const graph: { [nodeId: string]: GraphScenarioNode } = {
+      'node-alpha': { name: 'pod-scenarios', image: 'img:1' },
+    };
+
+    const file = buildStudioExport(graph, { graphRunName: 'run-123' }, {
+      baseline: 80,
+      mountPath: '/etc/krkn/metrics.yaml',
+    });
+
+    expect(file._studioLayout.resiliencyScoreConfig).toEqual({
+      baseline: 80,
+      mountPath: '/etc/krkn/metrics.yaml',
+    });
+
+    // Round-trips so re-import restores the config.
+    const parsed = parseImportedWorkflow(JSON.stringify(file));
+    expect(parsed.workflow.resiliencyScoreConfig).toEqual({
+      baseline: 80,
+      mountPath: '/etc/krkn/metrics.yaml',
+    });
+  });
+
+  it('omits resiliency config when none is provided', () => {
+    const graph: { [nodeId: string]: GraphScenarioNode } = {
+      'node-alpha': { name: 'pod-scenarios', image: 'img:1' },
+    };
+
+    const file = buildStudioExport(graph);
+
+    expect(file._studioLayout.resiliencyScoreConfig).toBeUndefined();
+  });
+
+  it('preserves per-node resiliencyWeight on reconstruction', () => {
+    const graph: { [nodeId: string]: GraphScenarioNode } = {
+      'node-alpha': { name: 'pod-scenarios', image: 'img:1', resiliencyWeight: 3 },
+    };
+
+    const wf = reconstructWorkflowFromGraph(graph);
+    const alpha = wf.nodes.find(n => n.nodeId === 'node-alpha');
+
+    expect(alpha?.config?.resiliencyWeight).toBe(3);
+  });
+});
+
+describe('node ID validation', () => {
+  it.each(['node', 'empty', 'Node', 'EMPTY'])(
+    'accepts literal node ID "%s"',
+    (nodeId) => {
+      const graph: { [nodeId: string]: GraphScenarioNode } = {
+        [nodeId]: { name: 'pod-scenarios', image: 'img:1' },
+      };
+      expect(() => reconstructWorkflowFromGraph(graph)).not.toThrow();
+    }
+  );
+
+  it.each(['___', '@@@', '---'])(
+    'rejects ID "%s" that only sanitizes via fallback',
+    (nodeId) => {
+      const graph: { [nodeId: string]: GraphScenarioNode } = {
+        [nodeId]: { name: 'pod-scenarios', image: 'img:1' },
+      };
+      expect(() => reconstructWorkflowFromGraph(graph)).toThrow(/Invalid node ID/);
+    }
+  );
+});
+
+describe('validateStudioLayout registryConfig check', () => {
+  it('rejects a configured node missing registryConfig', () => {
+    const wf = {
+      nodes: [
+        {
+          nodeId: 'node-alpha',
+          status: 'configured',
+          position: { x: 0, y: 0 },
+          config: {
+            registryType: 'public',
+            scenarioName: 'pod-scenarios',
+            scenarioImage: 'img:1',
+            scenarioFormValues: {},
+          },
+        },
+      ],
+      edges: [],
+      nextNodeNumber: 2,
+    };
+    expect(() => parseImportedWorkflow(JSON.stringify(wf))).toThrow(/missing its configuration/);
+  });
 });
