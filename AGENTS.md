@@ -12,6 +12,10 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## UI Conventions
+
+All UI work MUST follow `src/UI_STYLE_GUIDE.md` (buttons & icons, loaders & states, tables/forms/modals). Reuse the canonical components it cites.
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
