@@ -275,7 +275,7 @@ export function SaveWorkflowModal({ isOpen, onClose, onSuccess }: SaveWorkflowMo
         </FormGroup>
 
         {accessType === 'group' && (
-          <FormGroup label="Group" isRequired fieldId="wf-group-input">
+          <FormGroup label="Group" isRequired fieldId="group-search">
             {!isAdmin && availableGroups.length === 1 && (
               <>
                 <Label color="blue">{availableGroups[0].name}</Label>
