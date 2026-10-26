@@ -144,10 +144,15 @@ class AuthService {
   /**
    * Login user and store session data
    * @param request - Login credentials
-   * @returns Login response with token and user info
+   * @param expectedToken - Shared token observed when the login request started
+   * @returns Login response with token and user info, or null if a newer session won
    */
-  async login(request: LoginRequest): Promise<LoginResponse> {
+  async login(
+    request: LoginRequest,
+    expectedToken?: string | null,
+  ): Promise<LoginResponse | null> {
     try {
+      const tokenAtRequestStart = expectedToken === undefined ? this.getToken() : expectedToken;
       const response = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -175,8 +180,11 @@ class AuthService {
 
       const data: LoginResponse = await response.json();
 
+      // A different tab may have completed login while this request was in
+      // flight. Do not let this older response replace that shared session.
+      if (this.getToken() !== tokenAtRequestStart) return null;
+
       // Store auth data in shared localStorage
-      this.setToken(data.token);
       this.setUser({
         userId: data.userId,
         name: data.name,
@@ -185,6 +193,7 @@ class AuthService {
         organization: data.organization,
       });
       localStorage.setItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT, data.expiresAt);
+      this.setToken(data.token);
 
       return data;
     } catch (error) {
@@ -193,13 +202,22 @@ class AuthService {
   }
 
   /**
-   * Logout user and clear session data
+   * Logout user and clear session data. When expectedToken is provided, only
+   * clear storage if it still matches token used by the failed request.
    */
-  logout(): void {
+  logout(expectedToken?: string | null): boolean {
+    if (
+      expectedToken !== undefined &&
+      localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN) !== expectedToken
+    ) {
+      return false;
+    }
+
     this.clearToken();
     this.clearUser();
     localStorage.removeItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT);
     clearAuthStorage(sessionStorage);
+    return true;
   }
 
   /**

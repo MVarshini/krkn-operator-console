@@ -124,6 +124,20 @@ describe('authService - user groups', () => {
     expect(localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT)).toBeNull();
     expect(sessionStorage.getItem(AUTH_STORAGE_KEYS.TOKEN)).toBeNull();
   });
+
+  it('keeps a newer shared session when logout request token is stale', () => {
+    authService.setToken('current-token');
+    authService.setUser(baseUser);
+    localStorage.setItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT, new Date(Date.now() + 60_000).toISOString());
+
+    expect(authService.logout('previous-token')).toBe(false);
+    expect(localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN)).toBe('current-token');
+    expect(authService.getUser()).toEqual(baseUser);
+    expect(localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN_EXPIRES_AT)).not.toBeNull();
+
+    expect(authService.logout('current-token')).toBe(true);
+    expect(localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN)).toBeNull();
+  });
 });
 
 describe('authService - rate limiting (429)', () => {
