@@ -1692,6 +1692,9 @@ export interface AlertDocument {
 export interface QueryAlertsResponse {
   documents: AlertDocument[];
   total: number;
+  /** Present only when operator validated and applied requested server sort. */
+  sortBy?: AlertSortField;
+  sortOrder?: ElasticsearchSortOrder;
 }
 
 export interface QueryAlertsRequest {
